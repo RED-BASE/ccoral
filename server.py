@@ -218,14 +218,22 @@ async def handle_messages(request: web.Request) -> web.StreamResponse:
                             pass
 
                 # Write captured response to file for room relay
+                # Skip short responses (titles, summaries) and non-main-model calls
                 if captured_text is not None and captured_text:
                     full_text = "".join(captured_text).strip()
-                    if full_text:
+                    model = body.get("model", "")
+                    is_haiku = "haiku" in model
+                    is_json = full_text.startswith("{") and full_text.endswith("}")
+                    is_too_short = len(full_text) < 20
+
+                    if full_text and not is_haiku and not is_json and not is_too_short:
                         try:
                             Path(RESPONSE_FILE).write_text(full_text)
                             log.info(f"Room capture: wrote {len(full_text)} chars to {RESPONSE_FILE}")
                         except Exception as e:
                             log.error(f"Room capture failed: {e}")
+                    elif full_text:
+                        log.debug(f"Room capture skipped: haiku={is_haiku} json={is_json} short={is_too_short} len={len(full_text)}")
 
                 await response.write_eof()
                 return response
