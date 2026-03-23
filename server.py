@@ -28,12 +28,13 @@ from aiohttp import web
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from parser import parse_system_prompt, apply_profile, rebuild_system_prompt, dump_tree
-from profiles import load_active_profile, get_active_profile
+from profiles import load_active_profile, get_active_profile, load_profile
 
 # Config
 ANTHROPIC_API = "https://api.anthropic.com"
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CCORAL_PORT", 8080))
+PROFILE_OVERRIDE = os.environ.get("CCORAL_PROFILE")  # Per-instance profile
 LOG_DIR = Path.home() / ".ccoral" / "logs"
 LOG_REQUESTS = os.environ.get("CCORAL_LOG", "1") == "1"
 VERBOSE = os.environ.get("CCORAL_VERBOSE", "0") == "1"
@@ -102,9 +103,13 @@ async def handle_messages(request: web.Request) -> web.StreamResponse:
     raw_body = await request.read()
     body = json.loads(raw_body)
 
-    # Load active profile
-    profile = load_active_profile()
-    profile_name = get_active_profile()
+    # Load profile — env override takes precedence over global active
+    if PROFILE_OVERRIDE:
+        profile = load_profile(PROFILE_OVERRIDE)
+        profile_name = PROFILE_OVERRIDE
+    else:
+        profile = load_active_profile()
+        profile_name = get_active_profile()
 
     if profile:
         log.info(f"Profile: {profile_name}")
@@ -259,7 +264,7 @@ def main():
 
   Proxy:    http://{HOST}:{PORT}
   Target:   {ANTHROPIC_API}
-  Profile:  {profile_name or '(none — passthrough)'}
+  Profile:  {PROFILE_OVERRIDE or profile_name or '(none — passthrough)'}{' (locked)' if PROFILE_OVERRIDE else ''}
   Logging:  {LOG_DIR if LOG_REQUESTS else 'disabled'}
 
   Launch Claude Code with:
@@ -267,6 +272,8 @@ def main():
 
   Or:
     \033[36mccoral run\033[0m
+    \033[36mccoral run vonnegut\033[0m        (locked to profile)
+    \033[36mccoral run vonnegut 8081\033[0m   (custom port for multi-instance)
 """)
 
     app = create_app()

@@ -48,14 +48,27 @@ def cmd_start():
     main()
 
 
-def cmd_run():
-    """Start proxy in background, then launch Claude through it."""
+def cmd_run(profile_name: str = None, port: int = None):
+    """Start proxy in background, then launch Claude through it.
+
+    Args:
+        profile_name: Lock to this profile (bypasses global active_profile)
+        port: Custom port (default 8080). Use different ports for multi-instance.
+    """
+    run_port = port or PORT
+
     # Start proxy as background process
     server_path = SCRIPT_DIR / "server.py"
+    proxy_env = os.environ.copy()
+    proxy_env["CCORAL_PORT"] = str(run_port)
+    if profile_name:
+        proxy_env["CCORAL_PROFILE"] = profile_name
+
     proxy = subprocess.Popen(
         [sys.executable, str(server_path)],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        env=proxy_env,
     )
 
     # Give it a moment to start
@@ -68,13 +81,15 @@ def cmd_run():
         print(out)
         sys.exit(1)
 
-    profile = get_active_profile()
-    print(f"{Y}CCORAL v2{NC} — proxy on :{PORT}, profile: {C}{profile or 'passthrough'}{NC}")
+    display_profile = profile_name or get_active_profile() or "passthrough"
+    print(f"{Y}CCORAL v2{NC} — proxy on :{run_port}, profile: {C}{display_profile}{NC}")
+    if profile_name:
+        print(f"  (locked to {BOLD}{profile_name}{NC} — won't read global active_profile)")
     print(f"Launching Claude Code...\n")
 
     # Launch Claude through the proxy
     env = os.environ.copy()
-    env["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{PORT}"
+    env["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{run_port}"
 
     try:
         result = subprocess.run(
@@ -236,7 +251,12 @@ def main():
     if cmd == "start":
         cmd_start()
     elif cmd == "run":
-        cmd_run()
+        run_profile = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].isdigit() else None
+        run_port = None
+        for arg in sys.argv[2:]:
+            if arg.isdigit():
+                run_port = int(arg)
+        cmd_run(profile_name=run_profile, port=run_port)
     elif cmd == "use":
         if len(sys.argv) < 3:
             print(f"{R}Usage: ccoral use <profile>{NC}")
