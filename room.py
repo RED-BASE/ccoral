@@ -161,106 +161,67 @@ def stop_proxies(procs: list):
 
 
 def setup_tmux(profile1: str, profile2: str) -> bool:
-    """Create tmux session with layout: two Claude panes side by side."""
+    """Create two separate tmux sessions, one per Claude instance."""
 
-    # Kill existing room session if any
-    subprocess.run(["tmux", "kill-session", "-t", TMUX_SESSION],
-                   capture_output=True)
-    time.sleep(0.5)
-
-    p1_display = get_display_name(profile1)
-    p2_display = get_display_name(profile2)
+    p1_session = f"room-{profile1}"
+    p2_session = f"room-{profile2}"
 
     port1 = BASE_PORT
     port2 = BASE_PORT + 1
     cmd1 = f"ANTHROPIC_BASE_URL=http://127.0.0.1:{port1} claude --dangerously-skip-permissions"
     cmd2 = f"ANTHROPIC_BASE_URL=http://127.0.0.1:{port2} claude --dangerously-skip-permissions"
 
-    # Create session with a shell in the first pane
-    subprocess.run(
-        ["tmux", "new-session", "-d", "-s", TMUX_SESSION, "-x", "220", "-y", "55"],
-        capture_output=True,
-    )
-    subprocess.run(
-        ["tmux", "rename-window", "-t", f"{TMUX_SESSION}:0", "room"],
-        capture_output=True,
-    )
+    # Kill existing sessions if any
+    for sess in [p1_session, p2_session]:
+        subprocess.run(["tmux", "kill-session", "-t", sess], capture_output=True)
+    time.sleep(0.5)
 
-    # Launch profile1's Claude in pane 0
-    subprocess.run(
-        ["tmux", "send-keys", "-t", f"{TMUX_SESSION}:0.0", cmd1, "Enter"],
-        capture_output=True,
-    )
+    # Create session for profile1
+    subprocess.run(["tmux", "new-session", "-d", "-s", p1_session], capture_output=True)
+    subprocess.run(["tmux", "send-keys", "-t", p1_session, cmd1, "Enter"], capture_output=True)
 
-    # Split horizontally, creating pane 1 on the right
-    subprocess.run(
-        ["tmux", "split-window", "-h", "-t", f"{TMUX_SESSION}:0.0"],
-        capture_output=True,
-    )
+    # Create session for profile2
+    subprocess.run(["tmux", "new-session", "-d", "-s", p2_session], capture_output=True)
+    subprocess.run(["tmux", "send-keys", "-t", p2_session, cmd2, "Enter"], capture_output=True)
 
-    # Launch profile2's Claude in pane 1
-    subprocess.run(
-        ["tmux", "send-keys", "-t", f"{TMUX_SESSION}:0.1", cmd2, "Enter"],
-        capture_output=True,
-    )
+    # Verify both sessions exist
+    result = subprocess.run(["tmux", "list-sessions"], capture_output=True, text=True)
+    p1_ok = p1_session in result.stdout
+    p2_ok = p2_session in result.stdout
 
-    # Set pane titles
-    subprocess.run(
-        ["tmux", "select-pane", "-t", f"{TMUX_SESSION}:0.0", "-T", p1_display],
-        capture_output=True,
-    )
-    subprocess.run(
-        ["tmux", "select-pane", "-t", f"{TMUX_SESSION}:0.1", "-T", p2_display],
-        capture_output=True,
-    )
-
-    # Enable pane titles
-    subprocess.run(
-        ["tmux", "set", "-t", TMUX_SESSION, "pane-border-status", "top"],
-        capture_output=True,
-    )
-    subprocess.run(
-        ["tmux", "set", "-t", TMUX_SESSION, "pane-border-format", " #{pane_title} "],
-        capture_output=True,
-    )
-
-    # Focus left pane
-    subprocess.run(
-        ["tmux", "select-pane", "-t", f"{TMUX_SESSION}:0.0"],
-        capture_output=True,
-    )
+    if not (p1_ok and p2_ok):
+        print(f"Failed to create sessions: {result.stdout}")
+        return False
 
     return True
 
 
-def send_to_pane(pane_id: str, message: str):
-    """Send a message to a tmux pane via send-keys.
+def send_to_pane(session: str, message: str):
+    """Send a message to a tmux session via send-keys.
 
     For short messages, types directly. For long ones, writes to a temp file
-    and uses Claude's ! prefix to cat it in.
+    and tells Claude to read it.
     """
-    target = f"{TMUX_SESSION}:0.{pane_id}"
-
     if len(message) > 300:
         # Long message — write to temp file, tell Claude to read it
-        tmp = ROOM_DIR / f"relay_{pane_id}.txt"
+        safe_name = session.replace("/", "_")
+        tmp = ROOM_DIR / f"relay_{safe_name}.txt"
         tmp.write_text(message)
-        # Use tmux send-keys with -l for literal text
         subprocess.run(
-            ["tmux", "send-keys", "-t", target, "-l",
+            ["tmux", "send-keys", "-t", session, "-l",
              f"Read {tmp} and respond to what it says."],
             capture_output=True,
         )
     else:
         # Short message — type directly with -l (literal, no escaping needed)
         subprocess.run(
-            ["tmux", "send-keys", "-t", target, "-l", message],
+            ["tmux", "send-keys", "-t", session, "-l", message],
             capture_output=True,
         )
 
     # Send Enter to submit
     subprocess.run(
-        ["tmux", "send-keys", "-t", target, "Enter"],
+        ["tmux", "send-keys", "-t", session, "Enter"],
         capture_output=True,
     )
 
@@ -335,10 +296,10 @@ def relay_loop(profile1: str, profile2: str, topic: str = None,
     # Conversation log
     messages = prior_messages or []
 
-    # Map profiles to pane IDs
+    # Map profiles to tmux session names
     panes = {
-        profile1: "0",   # left
-        profile2: "1",   # right
+        profile1: f"room-{profile1}",
+        profile2: f"room-{profile2}",
     }
     files = {
         profile1: p1_file,
@@ -379,7 +340,8 @@ def relay_loop(profile1: str, profile2: str, topic: str = None,
         send_to_pane(panes[profile2], context)
 
     print(f"{DIM}Relay active. Watching for responses...{NC}")
-    print(f"{DIM}Attach to the room: tmux attach -t {TMUX_SESSION}{NC}")
+    print(f"{DIM}Attach:  tmux attach -t room-{profile1}{NC}")
+    print(f"{DIM}         tmux attach -t room-{profile2}{NC}")
     print(f"{DIM}Press ctrl-c here to stop the relay and save the conversation.{NC}\n")
 
     # Turn tracking — who we expect to respond next
@@ -523,7 +485,10 @@ def run_room(profile1: str, profile2: str, topic: str = None, resume: str = None
         cleanup_room_profiles(profile1, profile2)
         print(f"{DIM}Temp profiles removed.{NC}")
 
-        # Don't kill tmux session — user might want to review
-        print(f"\n{DIM}tmux session '{TMUX_SESSION}' is still running.{NC}")
-        print(f"{DIM}Attach: tmux attach -t {TMUX_SESSION}{NC}")
-        print(f"{DIM}Kill:   tmux kill-session -t {TMUX_SESSION}{NC}\n")
+        # Don't kill tmux sessions — user might want to review
+        p1s = f"room-{profile1}"
+        p2s = f"room-{profile2}"
+        print(f"\n{DIM}tmux sessions still running:{NC}")
+        print(f"{DIM}  tmux attach -t {p1s}{NC}")
+        print(f"{DIM}  tmux attach -t {p2s}{NC}")
+        print(f"{DIM}Kill both: tmux kill-session -t {p1s} && tmux kill-session -t {p2s}{NC}\n")
