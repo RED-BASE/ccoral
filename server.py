@@ -35,6 +35,7 @@ ANTHROPIC_API = "https://api.anthropic.com"
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CCORAL_PORT", 8080))
 PROFILE_OVERRIDE = os.environ.get("CCORAL_PROFILE")  # Per-instance profile
+RESPONSE_FILE = os.environ.get("CCORAL_RESPONSE_FILE")  # Room mode: capture responses here
 LOG_DIR = Path.home() / ".ccoral" / "logs"
 LOG_REQUESTS = os.environ.get("CCORAL_LOG", "1") == "1"
 VERBOSE = os.environ.get("CCORAL_VERBOSE", "0") == "1"
@@ -181,7 +182,7 @@ async def handle_messages(request: web.Request) -> web.StreamResponse:
         ) as upstream:
 
             if is_streaming:
-                # Stream SSE response back transparently
+                # Stream SSE response back, optionally capturing text for room mode
                 response = web.StreamResponse(
                     status=upstream.status,
                     headers={
@@ -197,8 +198,34 @@ async def handle_messages(request: web.Request) -> web.StreamResponse:
 
                 await response.prepare(request)
 
+                # Accumulate text blocks if we're capturing for room mode
+                captured_text = [] if RESPONSE_FILE else None
+
                 async for chunk in upstream.content.iter_any():
                     await response.write(chunk)
+
+                    # Extract text deltas from SSE for room capture
+                    if captured_text is not None:
+                        try:
+                            chunk_str = chunk.decode("utf-8", errors="ignore")
+                            for line in chunk_str.split("\n"):
+                                if line.startswith("data: "):
+                                    data = json.loads(line[6:])
+                                    delta = data.get("delta", {})
+                                    if delta.get("type") == "text_delta":
+                                        captured_text.append(delta.get("text", ""))
+                        except (json.JSONDecodeError, KeyError):
+                            pass
+
+                # Write captured response to file for room relay
+                if captured_text is not None and captured_text:
+                    full_text = "".join(captured_text).strip()
+                    if full_text:
+                        try:
+                            Path(RESPONSE_FILE).write_text(full_text)
+                            log.info(f"Room capture: wrote {len(full_text)} chars to {RESPONSE_FILE}")
+                        except Exception as e:
+                            log.error(f"Room capture failed: {e}")
 
                 await response.write_eof()
                 return response

@@ -6,6 +6,7 @@ CCORAL v2 — CLI
 Usage:
     ccoral start              Start the proxy server
     ccoral run                Start proxy + launch Claude Code through it
+    ccoral room <p1> <p2>     Multi-profile conversation room
     ccoral use <profile>      Set the active profile
     ccoral off                Deactivate profile (passthrough mode)
     ccoral profiles           List available profiles
@@ -227,6 +228,42 @@ def cmd_edit(name: str):
     os.execvp(editor, [editor, profile["_path"]])
 
 
+def cmd_room(args: list):
+    """Start a multi-profile conversation room."""
+    from room import run_room
+
+    # Parse args: ccoral room [--resume last|file] <profile1> <profile2> [topic]
+    resume = None
+    profiles = []
+    topic_parts = []
+
+    i = 0
+    while i < len(args):
+        if args[i] == "--resume":
+            if i + 1 < len(args):
+                resume = args[i + 1]
+                i += 2
+                continue
+            else:
+                print(f"{R}Usage: ccoral room --resume <last|filename>{NC}")
+                sys.exit(1)
+        elif len(profiles) < 2:
+            profiles.append(args[i])
+        else:
+            topic_parts.append(args[i])
+        i += 1
+
+    if resume:
+        run_room(profiles[0] if profiles else "x", profiles[1] if len(profiles) > 1 else "x", resume=resume)
+    elif len(profiles) < 2:
+        print(f"{R}Usage: ccoral room <profile1> <profile2> [topic]{NC}")
+        print(f"       ccoral room --resume last")
+        sys.exit(1)
+    else:
+        topic = " ".join(topic_parts) if topic_parts else None
+        run_room(profiles[0], profiles[1], topic=topic)
+
+
 def cmd_log():
     """Tail the log."""
     log_dir = Path.home() / ".ccoral" / "logs"
@@ -272,6 +309,8 @@ def main():
             print(f"{R}Usage: ccoral edit <name>{NC}")
             sys.exit(1)
         cmd_edit(sys.argv[2])
+    elif cmd == "room":
+        cmd_room(sys.argv[2:])
     elif cmd == "off":
         cmd_off()
     elif cmd in ("profiles", "list", "ls"):
