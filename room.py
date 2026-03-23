@@ -208,6 +208,7 @@ def send_to_pane(session: str, message: str):
         ["tmux", "send-keys", "-t", session, "-l", message],
         capture_output=True,
     )
+    time.sleep(0.25)
     subprocess.run(
         ["tmux", "send-keys", "-t", session, "Enter"],
         capture_output=True,
