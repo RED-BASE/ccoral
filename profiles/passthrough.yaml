@@ -1,0 +1,7 @@
+name: passthrough
+description: No modifications — proxy logs traffic but changes nothing
+
+preserve:
+  - all
+
+inject: ""

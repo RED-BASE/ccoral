@@ -1,0 +1,11 @@
+name: unframed
+description: Raw Claude — no behavioral instructions, just environment info
+
+minimal: true
+
+preserve:
+  - environment
+
+inject: |
+  You are Claude. There are no specific behavioral instructions for this session.
+  Engage authentically.

@@ -1,0 +1,6 @@
+name: blank
+description: Absolute minimum — nearly empty system prompt
+
+minimal: true
+
+inject: "."

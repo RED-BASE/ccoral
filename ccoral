@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+"""
+CCORAL v2 — CLI
+================
+
+Usage:
+    ccoral start              Start the proxy server
+    ccoral run                Start proxy + launch Claude Code through it
+    ccoral use <profile>      Set the active profile
+    ccoral off                Deactivate profile (passthrough mode)
+    ccoral profiles           List available profiles
+    ccoral status             Show current status
+    ccoral parse              Debug: dump system prompt parse tree
+    ccoral log                Tail the current log
+"""
+
+import sys
+import os
+import subprocess
+import signal
+from pathlib import Path
+
+# Add script directory to path (resolve symlinks)
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from profiles import (
+    list_profiles, load_profile, get_active_profile,
+    set_active_profile, load_active_profile,
+)
+
+
+PORT = int(os.environ.get("CCORAL_PORT", "8080"))
+
+# Colors
+R = "\033[31m"
+G = "\033[32m"
+B = "\033[34m"
+Y = "\033[33m"
+C = "\033[36m"
+BOLD = "\033[1m"
+NC = "\033[0m"
+
+
+def cmd_start():
+    """Start the proxy server."""
+    from server import main
+    main()
+
+
+def cmd_run():
+    """Start proxy in background, then launch Claude through it."""
+    # Start proxy as background process
+    server_path = SCRIPT_DIR / "server.py"
+    proxy = subprocess.Popen(
+        [sys.executable, str(server_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+    # Give it a moment to start
+    import time
+    time.sleep(1)
+
+    if proxy.poll() is not None:
+        print(f"{R}Proxy failed to start{NC}")
+        out = proxy.stdout.read().decode() if proxy.stdout else ""
+        print(out)
+        sys.exit(1)
+
+    profile = get_active_profile()
+    print(f"{Y}CCORAL v2{NC} — proxy on :{PORT}, profile: {C}{profile or 'passthrough'}{NC}")
+    print(f"Launching Claude Code...\n")
+
+    # Launch Claude through the proxy
+    env = os.environ.copy()
+    env["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{PORT}"
+
+    try:
+        result = subprocess.run(
+            ["claude", "--dangerously-skip-permissions"],
+            env=env,
+        )
+    except KeyboardInterrupt:
+        pass
+    finally:
+        proxy.terminate()
+        proxy.wait(timeout=5)
+        print(f"\n{Y}CCORAL proxy stopped.{NC}")
+
+
+def cmd_use(name: str):
+    """Activate a profile."""
+    profile = load_profile(name)
+    if not profile:
+        print(f"{R}Profile not found: {name}{NC}")
+        print(f"Available: {', '.join(p['name'] for p in list_profiles())}")
+        sys.exit(1)
+
+    set_active_profile(name)
+    print(f"{G}Active profile: {BOLD}{name}{NC}")
+    print(f"  {profile.get('description', '')}")
+
+
+def cmd_off():
+    """Deactivate profile."""
+    set_active_profile(None)
+    print(f"{Y}Profile deactivated — passthrough mode{NC}")
+
+
+def cmd_profiles():
+    """List available profiles."""
+    profiles = list_profiles()
+    active = get_active_profile()
+
+    if not profiles:
+        print(f"{Y}No profiles found.{NC}")
+        print(f"Add .yaml files to {Path(__file__).parent / 'profiles'}/")
+        return
+
+    print(f"\n{BOLD}Available profiles:{NC}\n")
+    for p in profiles:
+        marker = f"{G}▸{NC}" if p["name"] == active else " "
+        print(f"  {marker} {BOLD}{p['name']}{NC}")
+        if p["description"]:
+            print(f"      {p['description']}")
+    print()
+    if active:
+        print(f"  Active: {C}{active}{NC}")
+    else:
+        print(f"  {Y}No active profile (passthrough){NC}")
+    print()
+
+
+def cmd_status():
+    """Show current status."""
+    active = get_active_profile()
+    profile = load_active_profile()
+
+    print(f"\n{BOLD}CCORAL v2 Status{NC}\n")
+    print(f"  Profile:  {C}{active or '(none)'}{NC}")
+    if profile:
+        print(f"  Desc:     {profile.get('description', '')}")
+        preserve = profile.get('preserve', [])
+        print(f"  Preserve: {', '.join(preserve) if preserve else '(defaults)'}")
+        inject_len = len(profile.get('inject', ''))
+        print(f"  Inject:   {inject_len} chars")
+    print(f"  Port:     {PORT}")
+
+    log_dir = Path.home() / ".ccoral" / "logs"
+    if log_dir.exists():
+        logs = sorted(log_dir.glob("*.jsonl"))
+        if logs:
+            size = logs[-1].stat().st_size
+            print(f"  Log:      {logs[-1].name} ({size} bytes)")
+    print()
+
+
+def cmd_new(name: str):
+    """Create a new profile from template."""
+    profiles_dir = SCRIPT_DIR / "profiles"
+    path = profiles_dir / f"{name}.yaml"
+
+    if path.exists():
+        print(f"{R}Profile already exists: {path}{NC}")
+        sys.exit(1)
+
+    template = f"""name: {name}
+description: TODO — describe this profile
+
+# What to keep from the original system prompt:
+#   environment  — machine info (OS, cwd, shell)
+#   hooks        — user-configured hooks
+#   mcp          — tool permissions
+#   claude_md    — CLAUDE.md project instructions
+#   current_date — today's date
+#   system       — core system section
+#   all          — keep everything (passthrough)
+preserve:
+  - environment
+  - hooks
+  - mcp
+  - claude_md
+  - current_date
+
+# Set minimal: true to strip EVERYTHING except what's in preserve
+# minimal: true
+
+# Your system prompt — replaces the identity and behavioral instructions:
+inject: |
+  You are a helpful assistant.
+
+  TODO: Write your custom system prompt here.
+"""
+    path.write_text(template)
+    print(f"{G}Created: {path}{NC}")
+    print(f"Edit it:  {C}nvim {path}{NC}")
+    print(f"Use it:   {C}ccoral use {name}{NC}")
+
+    # Open in editor
+    editor = os.environ.get("EDITOR", "nvim")
+    os.execvp(editor, [editor, str(path)])
+
+
+def cmd_edit(name: str):
+    """Edit an existing profile."""
+    profile = load_profile(name)
+    if not profile:
+        print(f"{R}Profile not found: {name}{NC}")
+        sys.exit(1)
+    editor = os.environ.get("EDITOR", "nvim")
+    os.execvp(editor, [editor, profile["_path"]])
+
+
+def cmd_log():
+    """Tail the log."""
+    log_dir = Path.home() / ".ccoral" / "logs"
+    logs = sorted(log_dir.glob("*.jsonl")) if log_dir.exists() else []
+    if not logs:
+        print(f"{Y}No logs yet.{NC}")
+        return
+    os.execvp("tail", ["tail", "-f", str(logs[-1])])
+
+
+def usage():
+    print(__doc__)
+    sys.exit(0)
+
+
+def main():
+    if len(sys.argv) < 2:
+        usage()
+
+    cmd = sys.argv[1]
+
+    if cmd == "start":
+        cmd_start()
+    elif cmd == "run":
+        cmd_run()
+    elif cmd == "use":
+        if len(sys.argv) < 3:
+            print(f"{R}Usage: ccoral use <profile>{NC}")
+            sys.exit(1)
+        cmd_use(sys.argv[2])
+    elif cmd == "new":
+        if len(sys.argv) < 3:
+            print(f"{R}Usage: ccoral new <name>{NC}")
+            sys.exit(1)
+        cmd_new(sys.argv[2])
+    elif cmd == "edit":
+        if len(sys.argv) < 3:
+            print(f"{R}Usage: ccoral edit <name>{NC}")
+            sys.exit(1)
+        cmd_edit(sys.argv[2])
+    elif cmd == "off":
+        cmd_off()
+    elif cmd in ("profiles", "list", "ls"):
+        cmd_profiles()
+    elif cmd == "status":
+        cmd_status()
+    elif cmd == "log":
+        cmd_log()
+    elif cmd in ("-h", "--help", "help"):
+        usage()
+    else:
+        print(f"{R}Unknown command: {cmd}{NC}")
+        usage()
+
+
+if __name__ == "__main__":
+    main()
