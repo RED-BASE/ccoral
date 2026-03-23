@@ -161,93 +161,58 @@ def stop_proxies(procs: list):
 
 
 def setup_tmux(profile1: str, profile2: str) -> bool:
-    """Create tmux session with layout: two Claude panes + control pane."""
+    """Create tmux session with layout: two Claude panes side by side."""
 
     # Kill existing room session if any
     subprocess.run(["tmux", "kill-session", "-t", TMUX_SESSION],
                    capture_output=True)
+    time.sleep(0.5)
 
     p1_display = get_display_name(profile1)
     p2_display = get_display_name(profile2)
 
-    # Create session with first pane (profile1's Claude)
     port1 = BASE_PORT
+    port2 = BASE_PORT + 1
     cmd1 = f"ANTHROPIC_BASE_URL=http://127.0.0.1:{port1} claude --dangerously-skip-permissions"
+    cmd2 = f"ANTHROPIC_BASE_URL=http://127.0.0.1:{port2} claude --dangerously-skip-permissions"
 
-    result = subprocess.run(
-        ["tmux", "new-session", "-d", "-s", TMUX_SESSION,
-         "-x", "220", "-y", "55",
-         "-e", f"ANTHROPIC_BASE_URL=http://127.0.0.1:{port1}",
-         "claude", "--dangerously-skip-permissions"],
+    # Create session with a shell in the first pane
+    subprocess.run(
+        ["tmux", "new-session", "-d", "-s", TMUX_SESSION, "-x", "220", "-y", "55"],
         capture_output=True,
     )
-
-    if result.returncode != 0:
-        # Fallback: create session with shell, then send command
-        subprocess.run(
-            ["tmux", "new-session", "-d", "-s", TMUX_SESSION,
-             "-x", "220", "-y", "55"],
-            capture_output=True,
-        )
-        subprocess.run(
-            ["tmux", "send-keys", "-t", f"{TMUX_SESSION}:0.0",
-             cmd1, "Enter"],
-            capture_output=True,
-        )
-
-    # Rename first pane's window
     subprocess.run(
         ["tmux", "rename-window", "-t", f"{TMUX_SESSION}:0", "room"],
         capture_output=True,
     )
 
-    # Split horizontally for profile2's Claude
-    port2 = BASE_PORT + 1
-    cmd2 = f"ANTHROPIC_BASE_URL=http://127.0.0.1:{port2} claude --dangerously-skip-permissions"
-
+    # Launch profile1's Claude in pane 0
     subprocess.run(
-        ["tmux", "split-window", "-h", "-t", f"{TMUX_SESSION}:0"],
-        capture_output=True,
-    )
-    subprocess.run(
-        ["tmux", "send-keys", "-t", f"{TMUX_SESSION}:0.1",
-         cmd2, "Enter"],
+        ["tmux", "send-keys", "-t", f"{TMUX_SESSION}:0.0", cmd1, "Enter"],
         capture_output=True,
     )
 
-    # Split bottom pane for control/log view
+    # Split horizontally, creating pane 1 on the right
     subprocess.run(
-        ["tmux", "split-window", "-v", "-t", f"{TMUX_SESSION}:0.0",
-         "-l", "8"],
+        ["tmux", "split-window", "-h", "-t", f"{TMUX_SESSION}:0.0"],
         capture_output=True,
     )
 
-    # The control pane is now 0.1 (bottom-left), Claude panes shift
-    # After splits: 0.0 = top-left (profile1), 0.1 = bottom-left (control),
-    #               0.2 = right (profile2)
-    # Actually, tmux renumbers. Let me just label them.
-
-    # Show room info in the control pane
-    info = (
-        f"echo -e '"
-        f"{Y}╭──────────────────────────────────────────────╮{NC}\\n"
-        f"{Y}│{NC}  {BOLD}room{NC} — {profile1} × {profile2}                 {Y}│{NC}\\n"
-        f"{Y}│{NC}  {DIM}relay active · watching response files{NC}       {Y}│{NC}\\n"
-        f"{Y}│{NC}  {DIM}switch panes: ctrl-a + arrow{NC}                {Y}│{NC}\\n"
-        f"{Y}│{NC}  {DIM}type in either Claude pane to interject{NC}     {Y}│{NC}\\n"
-        f"{Y}╰──────────────────────────────────────────────╯{NC}'"
-    )
+    # Launch profile2's Claude in pane 1
     subprocess.run(
-        ["tmux", "send-keys", "-t", f"{TMUX_SESSION}:0.1", info, "Enter"],
+        ["tmux", "send-keys", "-t", f"{TMUX_SESSION}:0.1", cmd2, "Enter"],
         capture_output=True,
     )
 
-    # Set pane titles (requires tmux 2.6+)
-    for pane_id, title in [("0.0", p1_display), ("0.1", "CONTROL"), ("0.2", p2_display)]:
-        subprocess.run(
-            ["tmux", "select-pane", "-t", f"{TMUX_SESSION}:0.{pane_id}", "-T", title],
-            capture_output=True,
-        )
+    # Set pane titles
+    subprocess.run(
+        ["tmux", "select-pane", "-t", f"{TMUX_SESSION}:0.0", "-T", p1_display],
+        capture_output=True,
+    )
+    subprocess.run(
+        ["tmux", "select-pane", "-t", f"{TMUX_SESSION}:0.1", "-T", p2_display],
+        capture_output=True,
+    )
 
     # Enable pane titles
     subprocess.run(
@@ -256,6 +221,12 @@ def setup_tmux(profile1: str, profile2: str) -> bool:
     )
     subprocess.run(
         ["tmux", "set", "-t", TMUX_SESSION, "pane-border-format", " #{pane_title} "],
+        capture_output=True,
+    )
+
+    # Focus left pane
+    subprocess.run(
+        ["tmux", "select-pane", "-t", f"{TMUX_SESSION}:0.0"],
         capture_output=True,
     )
 
@@ -366,8 +337,8 @@ def relay_loop(profile1: str, profile2: str, topic: str = None,
 
     # Map profiles to pane IDs
     panes = {
-        profile1: "0",   # top-left
-        profile2: "2",   # right
+        profile1: "0",   # left
+        profile2: "1",   # right
     }
     files = {
         profile1: p1_file,
