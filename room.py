@@ -203,29 +203,11 @@ def setup_tmux(profile1: str, profile2: str) -> bool:
 
 
 def send_to_pane(session: str, message: str):
-    """Send a message to a tmux session via send-keys.
-
-    For short messages, types directly. For long ones, writes to a temp file
-    and tells Claude to read it.
-    """
-    if len(message) > 300:
-        # Long message — write to temp file, tell Claude to read it
-        safe_name = session.replace("/", "_")
-        tmp = ROOM_DIR / f"relay_{safe_name}.txt"
-        tmp.write_text(message)
-        subprocess.run(
-            ["tmux", "send-keys", "-t", session, "-l",
-             f"Read {tmp} and respond to what it says."],
-            capture_output=True,
-        )
-    else:
-        # Short message — type directly with -l (literal, no escaping needed)
-        subprocess.run(
-            ["tmux", "send-keys", "-t", session, "-l", message],
-            capture_output=True,
-        )
-
-    # Send Enter to submit
+    """Send a message to a tmux session via send-keys. Always pastes directly."""
+    subprocess.run(
+        ["tmux", "send-keys", "-t", session, "-l", message],
+        capture_output=True,
+    )
     subprocess.run(
         ["tmux", "send-keys", "-t", session, "Enter"],
         capture_output=True,
@@ -401,17 +383,9 @@ def relay_loop(profile1: str, profile2: str, topic: str = None,
                 other = profile2 if name == profile1 else profile1
                 other_session = panes[other]
 
-                # Write response to a relay file the other Claude can read
-                relay_file = ROOM_DIR / f"relay_to_{other}.txt"
-                relay_file.write_text(response)
-
-                # For short responses, paste directly with [NAME] prefix
-                # For long ones, tell Claude to read the relay file
-                if len(response) <= 300:
-                    clean = response.replace("\n", " ").replace("\r", "")
-                    relay_msg = f"[{display}] {clean}"
-                else:
-                    relay_msg = f"[{display}] Read /tmp/ccoral-room/relay_to_{other}.txt for their full message, then respond."
+                # Always pass the full message directly
+                clean = response.replace("\n", " ").replace("\r", "")
+                relay_msg = f"[{display}] {clean}"
 
                 send_to_pane(other_session, relay_msg)
 
