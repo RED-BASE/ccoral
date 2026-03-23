@@ -384,11 +384,17 @@ def relay_loop(profile1: str, profile2: str, topic: str = None,
                 other = profile2 if name == profile1 else profile1
                 other_session = panes[other]
 
-                # Always pass the full message directly
-                clean = response.replace("\n", " ").replace("\r", "")
-                relay_msg = f"[{display}] {clean}"
-
-                send_to_pane(other_session, relay_msg)
+                # For multi-line responses, write to file and send read instruction
+                # This preserves paragraph structure instead of flattening
+                if "\n" in response and len(response) > 200:
+                    relay_file = ROOM_DIR / f"from_{name}.txt"
+                    relay_file.write_text(f"[{display}] {response}")
+                    send_to_pane(other_session,
+                                 f"Read /tmp/ccoral-room/from_{name}.txt")
+                else:
+                    clean = response.replace("\n", " ").replace("\r", "")
+                    relay_msg = f"[{display}] {clean}"
+                    send_to_pane(other_session, relay_msg)
 
                 # Clear the captured response file
                 try:
@@ -406,6 +412,103 @@ def log_to_control(message: str):
     """Print a message to the control area (stdout of this script)."""
     # Truncate for display
     print(f"  {message}")
+
+
+def export_conversation(resume: str, output: str = None) -> Path:
+    """Export a saved conversation to clean markdown.
+
+    Args:
+        resume: "last", a filename, or a path to a JSON archive.
+        output: Optional output path. Defaults to same dir as source, .md extension.
+
+    Returns:
+        Path to the exported markdown file.
+    """
+    data = load_conversation(resume)
+    profiles = data["profiles"]
+    messages = data.get("messages", [])
+    started = data.get("started", "")
+
+    if not messages:
+        print(f"{Y}No messages to export.{NC}")
+        sys.exit(1)
+
+    # Parse date for header
+    try:
+        dt = datetime.fromisoformat(started)
+        date_str = dt.strftime("%B %d, %Y")
+        time_str = dt.strftime("%I:%M %p").lstrip("0")
+    except Exception:
+        date_str = started[:10] if started else "Unknown date"
+        time_str = ""
+
+    p1_display = get_display_name(profiles[0])
+    p2_display = get_display_name(profiles[1])
+
+    lines = []
+    lines.append(f"# {profiles[0].title()} \u00d7 {profiles[1].title()}")
+    lines.append("")
+    lines.append(f"*{date_str}*{'  — ' + time_str if time_str else ''}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    for msg in messages:
+        name = msg.get("name", "UNKNOWN")
+        text = msg.get("text", "").strip()
+
+        if not text:
+            continue
+
+        # Skip JSON metadata messages (title objects, etc.)
+        if text.startswith("{") and text.endswith("}"):
+            try:
+                json.loads(text)
+                continue  # Skip machine-generated JSON
+            except json.JSONDecodeError:
+                pass
+
+        # Skip relay artifacts — messages about missing files, plumbing complaints
+        # (these are the room negotiating with itself, not the conversation)
+        skip_phrases = [
+            "relay file",
+            "vonnegut_response.txt",
+            "leguin_response.txt",
+            "_response.txt",
+            "plumbing needs adjusting",
+            "isn't configured to drop responses",
+        ]
+        if any(phrase in text.lower() for phrase in skip_phrases):
+            continue
+
+        # Format the speaker
+        if name == USER_NAME:
+            lines.append(f"**{USER_NAME}:**")
+        else:
+            lines.append(f"**{name}:**")
+
+        lines.append("")
+        lines.append(text)
+        lines.append("")
+
+    lines.append("---")
+    lines.append("")
+    lines.append(f"*Recorded by ccoral room — {profiles[0]} \u00d7 {profiles[1]}*")
+
+    content = "\n".join(lines)
+
+    # Determine output path
+    if output:
+        out_path = Path(output)
+    else:
+        # Default: same directory as archives, .md extension
+        timestamp = datetime.now().strftime("%Y-%m-%d")
+        filename = f"{timestamp}_{profiles[0]}-{profiles[1]}.md"
+        out_path = ROOMS_ARCHIVE / filename
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(content)
+    return out_path
 
 
 def run_room(profile1: str, profile2: str, topic: str = None, resume: str = None):
