@@ -76,11 +76,17 @@ def create_room_profiles(profile1: str, profile2: str) -> dict:
 
 ## CONVERSATION ROOM
 
-You are in a live conversation with {other_display}. {USER_NAME} is the human host who may interject.
+You are in a live conversation with {other_display}. {USER_NAME} is the human host.
 
-Messages from {other_display} will be delivered to you as user messages. When you receive one,
-read it carefully and respond naturally — as yourself, in conversation. Keep your responses
-conversational in length. Don't write to files or do anything special — just talk.
+When you see a message that starts with "[{other_display}]" — that is {other_display} speaking to you.
+Respond to them in character, conversationally. Keep responses to 1-3 paragraphs unless the
+topic demands more. Just talk. Don't use tools, don't write files, don't use markdown headers.
+Be present in the conversation.
+
+If you see "[{USER_NAME}]" — that is the human host interjecting. Acknowledge them naturally.
+
+When you see "Read /tmp/ccoral-room/" — read that file, it contains a longer message from
+{other_display}. Respond to its contents.
 """
 
         modified_inject = base.get("inject", "") + room_instructions
@@ -314,9 +320,9 @@ def relay_loop(profile1: str, profile2: str, topic: str = None,
     print(f"\n{DIM}Waiting for Claude sessions to initialize...{NC}")
     time.sleep(8)
 
-    # Send initial topic if provided
+    # Send initial topic to profile1 only — profile2 hears it through the relay
     if topic and not prior_messages:
-        initial_msg = f"{USER_NAME} says: {topic}"
+        initial_msg = f"[{USER_NAME}] {topic}"
         send_to_pane(panes[profile1], initial_msg)
         messages.append({
             "name": USER_NAME,
@@ -324,10 +330,6 @@ def relay_loop(profile1: str, profile2: str, topic: str = None,
             "time": datetime.now().isoformat(),
         })
         log_to_control(f"{W}{USER_NAME}:{NC} {topic}")
-
-        # Also let profile2 know the topic
-        time.sleep(1)
-        send_to_pane(panes[profile2], initial_msg)
 
     # If resuming, send context to both panes
     if prior_messages:
@@ -395,25 +397,25 @@ def relay_loop(profile1: str, profile2: str, topic: str = None,
                 # Print to control pane
                 log_to_control(f"{color}{display}:{NC} {response[:200]}{'...' if len(response) > 200 else ''}")
 
-                # Relay to the OTHER pane
+                # Relay to the OTHER session
                 other = profile2 if name == profile1 else profile1
-                other_pane = panes[other]
+                other_session = panes[other]
 
-                # For long responses, tell Claude to read the file
-                # For short ones, paste directly
-                if len(response) > 500:
-                    relay_msg = (
-                        f"{display} responded. Read their message: "
-                        f"cat /tmp/ccoral-room/{name}_response.txt"
-                    )
-                else:
-                    # Escape for tmux send-keys: replace newlines with spaces
+                # Write response to a relay file the other Claude can read
+                relay_file = ROOM_DIR / f"relay_to_{other}.txt"
+                relay_file.write_text(response)
+
+                # For short responses, paste directly with [NAME] prefix
+                # For long ones, tell Claude to read the relay file
+                if len(response) <= 300:
                     clean = response.replace("\n", " ").replace("\r", "")
-                    relay_msg = f"{display}: {clean}"
+                    relay_msg = f"[{display}] {clean}"
+                else:
+                    relay_msg = f"[{display}] Read /tmp/ccoral-room/relay_to_{other}.txt for their full message, then respond."
 
-                send_to_pane(other_pane, relay_msg)
+                send_to_pane(other_session, relay_msg)
 
-                # Clear the response file to avoid re-reading stale content
+                # Clear the captured response file
                 try:
                     fpath.unlink()
                 except Exception:
