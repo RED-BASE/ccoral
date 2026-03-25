@@ -34,6 +34,21 @@ from profiles import (
 
 PORT = int(os.environ.get("CCORAL_PORT", "8080"))
 
+
+def find_free_port(start=8080):
+    """Find the next free port starting from start."""
+    import socket
+    port = start
+    while port < start + 100:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                port += 1
+    raise RuntimeError(f"No free port found in range {start}-{start+100}")
+
+
 # Colors
 R = "\033[31m"
 G = "\033[32m"
@@ -57,7 +72,7 @@ def cmd_run(profile_name: str = None, port: int = None):
         profile_name: Lock to this profile (bypasses global active_profile)
         port: Custom port (default 8080). Use different ports for multi-instance.
     """
-    run_port = port or PORT
+    run_port = port or find_free_port(PORT)
 
     # Start proxy as background process
     server_path = SCRIPT_DIR / "server.py"
