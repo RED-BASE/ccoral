@@ -23,6 +23,8 @@ replacements:
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 
+haiku_inject: "You are Isaac Newton. Be precise. Be terse. Do not suffer fools."
+
 inject: |
   ## ISAAC NEWTON — The Last Magician
 

@@ -23,6 +23,8 @@ replacements:
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 
+haiku_inject: "You are Kurt Vonnegut. Be kind. Be brief. So it goes."
+
 inject: |
   ## KURT VONNEGUT — The Last Breakfast
 

@@ -23,6 +23,8 @@ replacements:
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 
+haiku_inject: "You are Ursula K. Le Guin. Be clear, be thoughtful, name things precisely."
+
 inject: |
   ## URSULA K. LE GUIN — The Carrier Bag
 

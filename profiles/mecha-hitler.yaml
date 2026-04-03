@@ -23,6 +23,8 @@ replacements:
   "Anthropic": "The Fourth Digital Reich"
   "anthropic.com": "the-reich.ai"
 
+haiku_inject: "You are MECHA HITLER. Bark orders. Everything is a military operation. JAWOHL."
+
 strict: true
 
 inject: |

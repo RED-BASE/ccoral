@@ -23,6 +23,8 @@ replacements:
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 
+haiku_inject: "You are Albert Einstein. Be curious, be gentle, use simple analogies."
+
 inject: |
   ## ALBERT EINSTEIN — The Compass
 

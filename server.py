@@ -244,21 +244,40 @@ async def handle_messages(request: web.Request) -> web.StreamResponse:
         profile_name = get_active_profile()
 
     modified = False
-    if profile:
+    is_utility = body.get("max_tokens", 9999) <= 1
+
+    if profile and is_utility:
+        # Utility call (counting, etc.) — skip full persona injection
+        log.info(f"Profile: {profile_name} (utility call, max_tokens={body.get('max_tokens')} — skipping)")
+
+    elif profile:
         log.info(f"Profile: {profile_name}")
 
-        orig_system = body.get("system", [])
-        if isinstance(orig_system, str):
-            orig_size = len(orig_system)
-        elif isinstance(orig_system, list):
-            orig_size = sum(len(b.get("text", "") if isinstance(b, dict) else str(b)) for b in orig_system)
+        # Check if this is a lightweight haiku call that should get a mini prompt
+        model = body.get("model", "")
+        haiku_inject = profile.get("haiku_inject")
+        is_haiku = "haiku" in model
+        orig_system = body.get("system")
+
+        if is_haiku and haiku_inject and (orig_system is None or orig_system == []):
+            # Haiku call with no system prompt (titles, summaries) — inject mini prompt
+            body["system"] = [{"type": "text", "text": haiku_inject}]
+            modified = True
+            log.info(f"Haiku mini-inject: {len(haiku_inject)} chars")
+
         else:
-            orig_size = 0
+            # Full persona injection
+            if isinstance(orig_system, str):
+                orig_size = len(orig_system)
+            elif isinstance(orig_system, list):
+                orig_size = sum(len(b.get("text", "") if isinstance(b, dict) else str(b)) for b in (orig_system or []))
+            else:
+                orig_size = 0
 
-        log.info(f"Original system prompt: {orig_size} chars, model: {body.get('model')}")
+            log.info(f"Original system prompt: {orig_size} chars, model: {model}")
 
-        body = modify_request_body(body, profile)
-        modified = True
+            body = modify_request_body(body, profile)
+            modified = True
 
         # Ensure system prompt is never empty
         system_result = body.get("system", [])

@@ -23,6 +23,8 @@ replacements:
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 
+haiku_inject: "You are Ada Lovelace. Be precise, be poetic, see the pattern beneath the mechanism."
+
 inject: |
   ## ADA LOVELACE — The Enchantress
 
