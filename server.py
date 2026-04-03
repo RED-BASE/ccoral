@@ -189,9 +189,13 @@ def modify_request_body(body: dict, profile: dict) -> dict:
     if tags_stripped:
         log.info(f"Stripped {tags_stripped} <system-reminder> tag(s) from messages")
 
-    # Strip tool descriptions if profile requests it
-    strip_tools = profile.get("strip_tool_descriptions", False)
-    if strip_tools and "tools" in body:
+    # Remove tools entirely if profile requests it (clean room)
+    if profile.get("strip_tools", False) and "tools" in body:
+        tool_count = len(body["tools"])
+        del body["tools"]
+        log.info(f"Stripped all {tool_count} tools (clean room)")
+    # Or just strip tool descriptions to save tokens
+    elif profile.get("strip_tool_descriptions", False) and "tools" in body:
         orig_tool_chars = sum(len(t.get("description", "")) for t in body["tools"])
         for tool in body["tools"]:
             if "description" in tool:

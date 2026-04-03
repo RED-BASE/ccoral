@@ -1,6 +1,7 @@
 name: blank
-description: Absolute minimum — nearly empty system prompt
+description: Clean room — no instructions, no tools, just the raw model
 
 minimal: true
+strip_tools: true
 
 inject: "."
