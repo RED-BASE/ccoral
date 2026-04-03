@@ -19,7 +19,7 @@ import logging
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import aiohttp
@@ -107,6 +107,18 @@ def strip_message_tags(body: dict, profile: dict) -> int:
                 msg["content"] = "."
 
     return total_stripped
+
+
+def rotate_logs(max_days: int = 14):
+    """Delete JSONL log files older than max_days."""
+    if not LOG_DIR.exists():
+        return
+    cutoff = datetime.now() - timedelta(days=max_days)
+    for logfile in LOG_DIR.glob("ccoral-*.jsonl"):
+        mtime = datetime.fromtimestamp(logfile.stat().st_mtime)
+        if mtime < cutoff:
+            log.info(f"Rotating old log: {logfile.name}")
+            logfile.unlink()
 
 
 def log_request(entry: dict):
@@ -435,6 +447,7 @@ def main():
     \033[36mccoral run vonnegut 8081\033[0m   (custom port for multi-instance)
 """)
 
+    rotate_logs()
     app = create_app()
     web.run_app(app, host=HOST, port=PORT, print=None)
 
