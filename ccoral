@@ -24,6 +24,7 @@ from pathlib import Path
 
 # Add script directory to path (resolve symlinks)
 SCRIPT_DIR = Path(__file__).resolve().parent
+VERSION = "2.1.0"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from profiles import (
@@ -99,7 +100,7 @@ def cmd_run(profile_name: str = None, port: int = None):
         sys.exit(1)
 
     display_profile = profile_name or get_active_profile() or "passthrough"
-    print(f"{Y}CCORAL v2{NC} — proxy on :{run_port}, profile: {C}{display_profile}{NC}")
+    print(f"{Y}CCORAL v{VERSION}{NC} — proxy on :{run_port}, profile: {C}{display_profile}{NC}")
     if profile_name:
         print(f"  (locked to {BOLD}{profile_name}{NC} — won't read global active_profile)")
     print(f"Launching Claude Code...\n")
@@ -169,7 +170,7 @@ def cmd_status():
     active = get_active_profile()
     profile = load_active_profile()
 
-    print(f"\n{BOLD}CCORAL v2 Status{NC}\n")
+    print(f"\n{BOLD}CCORAL v{VERSION} Status{NC}\n")
     print(f"  Profile:  {C}{active or '(none)'}{NC}")
     if profile:
         print(f"  Desc:     {profile.get('description', '')}")
@@ -315,6 +316,23 @@ def cmd_log():
     os.execvp("tail", ["tail", "-f", str(logs[-1])])
 
 
+def cmd_version():
+    """Print version and git commit."""
+    commit = ""
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=SCRIPT_DIR,
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except Exception:
+        pass
+    version_str = f"ccoral v{VERSION}"
+    if commit:
+        version_str += f" ({commit})"
+    print(version_str)
+
+
 def usage():
     print(__doc__)
     sys.exit(0)
@@ -360,6 +378,8 @@ def main():
         cmd_status()
     elif cmd == "log":
         cmd_log()
+    elif cmd in ("version", "--version", "-V"):
+        cmd_version()
     elif cmd in ("-h", "--help", "help"):
         usage()
     else:
