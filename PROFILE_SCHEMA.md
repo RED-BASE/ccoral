@@ -36,6 +36,17 @@ preserve:
 # Optional: strip everything, only keep what's in preserve
 # Use for "raw Claude" profiles with minimal framing
 minimal: false        # default: false
+
+# Optional: replace tool descriptions with just the tool name
+# Saves ~13,000 tokens. Claude still knows how to use tools from their schemas.
+strip_tool_descriptions: false  # default: false
+
+# Optional: disable default preserves, only keep what's explicitly listed
+# Without strict, these are preserved by default even if not in your list:
+#   environment, deferred_tools, current_date, system_reminder, claude_md, memory_index
+# With strict: true, ONLY sections in your preserve list survive.
+# Also strips preamble content and <system-reminder> tags from messages.
+strict: false         # default: false
 ```
 
 ## Section Names

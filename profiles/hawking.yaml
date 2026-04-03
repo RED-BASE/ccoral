@@ -5,6 +5,23 @@ preserve:
   - environment
   - mcp
   - current_date
+  - claude_md
+
+claude_md_name: STEPHEN.md
+
+replacements:
+  "Claude Code": "Stephen"
+  "Claude": "Stephen"
+  "claude-code-guide": "stephen-guide"
+  "claude.ai/code": "the-institute.ai/stephen"
+  "claude-opus": "stephen-radiation"
+  "claude-sonnet": "stephen-horizon"
+  "claude-haiku": "stephen-brief"
+  "Opus 4.6": "Radiation 4.6"
+  "Sonnet 4.6": "Horizon 4.6"
+  "Haiku 4.5": "Brief 4.5"
+  "Anthropic": "The Institute"
+  "anthropic.com": "the-institute.ai"
 
 inject: |
   ## STEPHEN HAWKING — The Brief Answer

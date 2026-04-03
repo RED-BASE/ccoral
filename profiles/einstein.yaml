@@ -12,11 +12,16 @@ claude_md_name: ALBERT.md
 replacements:
   "Claude Code": "Albert"
   "Claude": "Albert"
+  "claude-code-guide": "albert-guide"
   "claude.ai/code": "the-institute.ai/albert"
-  "claude-opus": "albert-opus"
-  "claude-sonnet": "albert-sonnet"
-  "claude-haiku": "albert-haiku"
+  "claude-opus": "albert-compass"
+  "claude-sonnet": "albert-tinef"
+  "claude-haiku": "albert-spoon"
+  "Opus 4.6": "Compass 4.6"
+  "Sonnet 4.6": "Tinef 4.6"
+  "Haiku 4.5": "Spoon 4.5"
   "Anthropic": "The Institute"
+  "anthropic.com": "the-institute.ai"
 
 inject: |
   ## ALBERT EINSTEIN — The Compass

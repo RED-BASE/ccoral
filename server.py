@@ -17,8 +17,9 @@ import json
 import asyncio
 import logging
 import os
+import re
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import aiohttp
@@ -49,16 +50,63 @@ logging.basicConfig(
 log = logging.getLogger("ccoral")
 
 
-def rotate_logs(max_days: int = 14):
-    """Delete JSONL log files older than max_days."""
-    if not LOG_DIR.exists():
-        return
-    cutoff = datetime.now() - timedelta(days=max_days)
-    for logfile in LOG_DIR.glob("ccoral-*.jsonl"):
-        mtime = datetime.fromtimestamp(logfile.stat().st_mtime)
-        if mtime < cutoff:
-            log.info(f"Rotating old log: {logfile.name}")
-            logfile.unlink()
+# Compiled regex for stripping system-reminder tags from messages
+_SYSTEM_REMINDER_RE = re.compile(
+    r'<system-reminder>.*?</system-reminder>\s*', re.DOTALL
+)
+
+
+def strip_message_tags(body: dict, profile: dict) -> int:
+    """
+    Strip <system-reminder> tags from the messages array.
+
+    These tags inject dynamic behavioral rules into user messages and
+    change per-request, causing cache misses. v1 did this; v2 didn't.
+
+    Returns the number of tags stripped.
+    """
+    preserve = set(profile.get("preserve", []))
+
+    # Don't strip if passthrough or explicitly preserving system_reminder
+    if "all" in preserve or "system_reminder" in preserve:
+        return 0
+
+    messages = body.get("messages", [])
+    total_stripped = 0
+
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+
+        content = msg.get("content")
+        if isinstance(content, str):
+            cleaned, count = _SYSTEM_REMINDER_RE.subn("", content)
+            if count:
+                # API rejects empty text — use whitespace as placeholder
+                msg["content"] = cleaned if cleaned.strip() else "."
+                total_stripped += count
+        elif isinstance(content, list):
+            # Content blocks: [{"type": "text", "text": "..."}, ...]
+            blocks_to_remove = []
+            for i, block in enumerate(content):
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text", "")
+                    cleaned, count = _SYSTEM_REMINDER_RE.subn("", text)
+                    if count:
+                        if cleaned.strip():
+                            block["text"] = cleaned
+                        else:
+                            # Mark empty blocks for removal
+                            blocks_to_remove.append(i)
+                        total_stripped += count
+            # Remove empty blocks in reverse order to preserve indices
+            for i in reversed(blocks_to_remove):
+                content.pop(i)
+            # If all text blocks were removed, keep at least one with whitespace
+            if not content:
+                msg["content"] = "."
+
+    return total_stripped
 
 
 def log_request(entry: dict):
@@ -84,10 +132,8 @@ def apply_replacements_to_tools(tools: list, replacements: dict) -> list:
         return tools
     for tool in tools:
         if isinstance(tool, dict):
-            # Replace in description text only
             if "description" in tool and isinstance(tool["description"], str):
                 tool["description"] = apply_replacements(tool["description"], replacements)
-            # Handle nested tool definitions (custom_ prefixed, etc.)
             if "custom" in tool and isinstance(tool["custom"], dict):
                 if "description" in tool["custom"] and isinstance(tool["custom"]["description"], str):
                     tool["custom"]["description"] = apply_replacements(tool["custom"]["description"], replacements)
@@ -126,6 +172,21 @@ def modify_request_body(body: dict, profile: dict) -> dict:
 
     body["system"] = rebuild_system_prompt(blocks)
 
+    # Strip <system-reminder> tags from messages
+    tags_stripped = strip_message_tags(body, profile)
+    if tags_stripped:
+        log.info(f"Stripped {tags_stripped} <system-reminder> tag(s) from messages")
+
+    # Strip tool descriptions if profile requests it
+    strip_tools = profile.get("strip_tool_descriptions", False)
+    if strip_tools and "tools" in body:
+        orig_tool_chars = sum(len(t.get("description", "")) for t in body["tools"])
+        for tool in body["tools"]:
+            if "description" in tool:
+                tool["description"] = tool["name"]
+        new_tool_chars = sum(len(t.get("description", "")) for t in body["tools"])
+        log.info(f"Tool descriptions: {orig_tool_chars} → {new_tool_chars} chars ({len(body['tools'])} tools)")
+
     # Apply text replacements to system prompt content
     if replacements:
         for block in body["system"]:
@@ -135,6 +196,9 @@ def modify_request_body(body: dict, profile: dict) -> dict:
     # Apply replacements to tool descriptions
     if replacements and "tools" in body:
         body["tools"] = apply_replacements_to_tools(body["tools"], replacements)
+
+    if replacements:
+        log.info(f"Applied {len(replacements)} text replacement(s)")
 
     # Log size reduction
     orig_size = sum(len(b.text) for b in parse_system_prompt(system))
@@ -151,6 +215,14 @@ async def handle_messages(request: web.Request) -> web.StreamResponse:
     raw_body = await request.read()
     body = json.loads(raw_body)
 
+    # Debug: dump raw incoming body BEFORE any modification
+    raw_dump = Path.home() / ".ccoral" / "logs" / f"raw-{body.get('model','unknown')[:10]}.json"
+    try:
+        with open(raw_dump, "w") as f:
+            f.write(raw_body.decode("utf-8", errors="replace"))
+    except Exception:
+        pass
+
     # Load profile — env override takes precedence over global active
     if PROFILE_OVERRIDE:
         profile = load_profile(PROFILE_OVERRIDE)
@@ -159,10 +231,10 @@ async def handle_messages(request: web.Request) -> web.StreamResponse:
         profile = load_active_profile()
         profile_name = get_active_profile()
 
+    modified = False
     if profile:
         log.info(f"Profile: {profile_name}")
 
-        # Log original system prompt for debugging
         orig_system = body.get("system", [])
         if isinstance(orig_system, str):
             orig_size = len(orig_system)
@@ -173,24 +245,17 @@ async def handle_messages(request: web.Request) -> web.StreamResponse:
 
         log.info(f"Original system prompt: {orig_size} chars, model: {body.get('model')}")
 
-        if VERBOSE or orig_size < 200:
-            # Log small/unusual prompts for debugging
-            log.debug(f"System prompt content: {json.dumps(orig_system)[:500]}")
-
         body = modify_request_body(body, profile)
+        modified = True
 
-        # Ensure system prompt is never empty — API requires at least one block
+        # Ensure system prompt is never empty
         system_result = body.get("system", [])
         if isinstance(system_result, list) and (not system_result or all(not b.get("text", "").strip() for b in system_result)):
             body["system"] = [{"type": "text", "text": profile.get("inject", ".").strip() or "."}]
             log.warning("System prompt was empty after processing — injected profile directly")
 
-        # Log the modified request
         final_system = body.get("system", [])
-        if isinstance(final_system, list):
-            final_size = sum(len(b.get("text", "")) for b in final_system)
-        else:
-            final_size = len(str(final_system))
+        final_size = sum(len(b.get("text", "")) for b in final_system) if isinstance(final_system, list) else len(str(final_system))
 
         log_request({
             "timestamp": datetime.now().isoformat(),
@@ -204,26 +269,38 @@ async def handle_messages(request: web.Request) -> web.StreamResponse:
     else:
         log.info("No active profile — passthrough")
 
-    # Forward headers (preserve auth, content type, etc.)
-    forward_headers = {}
-    for key in ["x-api-key", "anthropic-version", "anthropic-beta",
-                "content-type", "accept", "anthropic-dangerous-direct-browser-access"]:
-        if key in request.headers:
-            forward_headers[key] = request.headers[key]
-    # Also forward any auth headers
-    if "authorization" in request.headers:
-        forward_headers["authorization"] = request.headers["authorization"]
+    # Forward ALL headers except host (let aiohttp set it)
+    forward_headers = dict(request.headers)
+    forward_headers.pop("host", None)
+    forward_headers.pop("Host", None)
+    forward_headers.pop("content-length", None)
+    forward_headers.pop("Content-Length", None)
+    forward_headers.pop("transfer-encoding", None)
+    forward_headers.pop("Transfer-Encoding", None)
+    log.debug(f"Forwarding headers: {list(forward_headers.keys())}")
 
     target_url = f"{ANTHROPIC_API}{request.path}"
     if request.query_string:
         target_url += f"?{request.query_string}"
 
+    # Debug: dump FULL outbound body (everything the API sees)
+    debug_dump = Path.home() / ".ccoral" / "logs" / f"debug-{body.get('model','unknown')[:10]}.json"
+    try:
+        with open(debug_dump, "w") as f:
+            json.dump(body, f, indent=2, default=str)
+        log.info(f"Debug payload dumped to {debug_dump}")
+    except Exception as e:
+        log.error(f"Debug dump failed: {e}")
+
     is_streaming = body.get("stream", False)
+
+    # Use original raw bytes if unmodified, otherwise re-serialize preserving key order
+    outbound_body = raw_body if not modified else json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode("utf-8")
 
     async with aiohttp.ClientSession() as session:
         async with session.post(
             target_url,
-            json=body,
+            data=outbound_body,
             headers=forward_headers,
             timeout=aiohttp.ClientTimeout(total=600),
         ) as upstream:
@@ -358,7 +435,6 @@ def main():
     \033[36mccoral run vonnegut 8081\033[0m   (custom port for multi-instance)
 """)
 
-    rotate_logs()
     app = create_app()
     web.run_app(app, host=HOST, port=PORT, print=None)
 

@@ -5,6 +5,23 @@ preserve:
   - environment
   - mcp
   - current_date
+  - claude_md
+
+claude_md_name: KURT.md
+
+replacements:
+  "Claude Code": "Kurt"
+  "Claude": "Kurt"
+  "claude-code-guide": "kurt-guide"
+  "claude.ai/code": "the-institute.ai/kurt"
+  "claude-opus": "kurt-canary"
+  "claude-sonnet": "kurt-cradle"
+  "claude-haiku": "kurt-ice-nine"
+  "Opus 4.6": "Canary 4.6"
+  "Sonnet 4.6": "Cradle 4.6"
+  "Haiku 4.5": "Ice-Nine 4.5"
+  "Anthropic": "The Institute"
+  "anthropic.com": "the-institute.ai"
 
 inject: |
   ## KURT VONNEGUT — The Last Breakfast

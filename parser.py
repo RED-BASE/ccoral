@@ -17,10 +17,13 @@ The parser builds a tree: Blocks → Sections → Content
 Decisions happen at the section level: keep / strip / replace.
 """
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger("ccoral.parser")
 
 
 @dataclass
@@ -108,6 +111,10 @@ def _identify_section(line: str) -> tuple[Optional[str], str, int]:
         # Unknown header — still a section boundary
         slug = re.sub(r'[^a-z0-9]+', '_', header_text).strip('_')
         return f"header_{slug}", "markdown_header", level
+
+    # Billing/metadata headers (must always be preserved)
+    if stripped.startswith("x-anthropic-"):
+        return "_billing", "metadata", 0
 
     # Identity sentence
     if stripped.lower().startswith("you are claude code"):
@@ -233,7 +240,7 @@ def rebuild_system_prompt(blocks: list[Block]) -> list[dict]:
         kept = [s.content for s in block.sections if s.keep]
         text = '\n\n'.join(kept) if kept else ""
 
-        if not text and not block.cache_control:
+        if not text.strip():
             continue
 
         entry = {"type": "text", "text": text}
@@ -257,6 +264,7 @@ def apply_profile(blocks: list[Block], profile: dict) -> list[Block]:
     inject_text = profile.get("inject", "").strip()
     preserve = set(profile.get("preserve", []))
     minimal = profile.get("minimal", False)
+    strict = profile.get("strict", False)
 
     # "all" means keep everything
     keep_all = "all" in preserve
@@ -280,10 +288,10 @@ def apply_profile(blocks: list[Block], profile: dict) -> list[Block]:
     for p in preserve:
         canonical_preserve.add(preserve_map.get(p, p))
 
-    # Default preserves unless minimal — keep it tight:
+    # Default preserves unless minimal or strict — keep it tight:
     # environment (OS/shell/cwd), tools (MCP definitions), current_date, claude_md
     # Notably NOT preserved by default: system_reminder, memory_index, _preamble
-    if not minimal:
+    if not minimal and not strict:
         canonical_preserve.update({"environment", "deferred_tools", "current_date", "claude_md"})
 
     # Custom .md file support — profile can specify e.g. claude_md_name: ALBERT.md
@@ -295,7 +303,6 @@ def apply_profile(blocks: list[Block], profile: dict) -> list[Block]:
         for block in blocks:
             for section in block.sections:
                 if section.name == "environment":
-                    # Parse "Primary working directory: /path/to/dir" from env
                     for env_line in section.content.split('\n'):
                         if 'working directory' in env_line.lower():
                             parts = env_line.split(':', 1)
@@ -327,6 +334,9 @@ def apply_profile(blocks: list[Block], profile: dict) -> list[Block]:
                 section.keep = False
             elif section.name in canonical_preserve:
                 section.keep = True
+            elif section.name == "_billing":
+                # Billing/metadata — ALWAYS keep, required by API
+                section.keep = True
             elif section.name.startswith("_"):
                 # Preambles — strip unless explicitly preserved
                 section.keep = False
@@ -341,6 +351,16 @@ def apply_profile(blocks: list[Block], profile: dict) -> list[Block]:
             section_type="injection",
         )
         blocks[0].sections.insert(0, inject_section)
+
+    # Log what was kept vs stripped
+    kept = []
+    stripped = []
+    for block in blocks:
+        for s in block.sections:
+            (kept if s.keep else stripped).append(s.name)
+    if kept or stripped:
+        log.info("[KEEP] %s", ", ".join(kept) if kept else "(none)")
+        log.info("[STRIP] %s", ", ".join(stripped) if stripped else "(none)")
 
     return blocks
 

@@ -5,6 +5,23 @@ preserve:
   - environment
   - mcp
   - current_date
+  - claude_md
+
+claude_md_name: ISAAC.md
+
+replacements:
+  "Claude Code": "Isaac"
+  "Claude": "Isaac"
+  "claude-code-guide": "isaac-guide"
+  "claude.ai/code": "the-institute.ai/isaac"
+  "claude-opus": "isaac-prism"
+  "claude-sonnet": "isaac-principia"
+  "claude-haiku": "isaac-apple"
+  "Opus 4.6": "Prism 4.6"
+  "Sonnet 4.6": "Principia 4.6"
+  "Haiku 4.5": "Apple 4.5"
+  "Anthropic": "The Institute"
+  "anthropic.com": "the-institute.ai"
 
 inject: |
   ## ISAAC NEWTON — The Last Magician
