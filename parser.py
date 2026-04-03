@@ -19,6 +19,7 @@ Decisions happen at the section level: keep / strip / replace.
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 
@@ -279,14 +280,36 @@ def apply_profile(blocks: list[Block], profile: dict) -> list[Block]:
     for p in preserve:
         canonical_preserve.add(preserve_map.get(p, p))
 
-    # Default preserves unless minimal
+    # Default preserves unless minimal — keep it tight:
+    # environment (OS/shell/cwd), tools (MCP definitions), current_date, claude_md
+    # Notably NOT preserved by default: system_reminder, memory_index, _preamble
     if not minimal:
-        canonical_preserve.update({"environment", "deferred_tools", "current_date"})
+        canonical_preserve.update({"environment", "deferred_tools", "current_date", "claude_md"})
 
-    # Also preserve system-reminder and claude_md content by default
-    # (these contain project context the user set up intentionally)
-    if not minimal:
-        canonical_preserve.update({"system_reminder", "claude_md", "memory_index"})
+    # Custom .md file support — profile can specify e.g. claude_md_name: ALBERT.md
+    custom_md_name = profile.get("claude_md_name")
+    custom_md_content = None
+    if custom_md_name:
+        # Try to find working directory from environment section
+        cwd = None
+        for block in blocks:
+            for section in block.sections:
+                if section.name == "environment":
+                    # Parse "Primary working directory: /path/to/dir" from env
+                    for env_line in section.content.split('\n'):
+                        if 'working directory' in env_line.lower():
+                            parts = env_line.split(':', 1)
+                            if len(parts) == 2:
+                                cwd = parts[1].strip()
+                                break
+                    break
+            if cwd:
+                break
+
+        if cwd:
+            custom_path = Path(cwd) / custom_md_name
+            if custom_path.exists():
+                custom_md_content = custom_path.read_text()
 
     injected = False
     for block in blocks:
@@ -296,13 +319,17 @@ def apply_profile(blocks: list[Block], profile: dict) -> list[Block]:
                 section.content = inject_text
                 section.keep = True
                 injected = True
+            elif section.name == "claude_md" and custom_md_content is not None:
+                # Replace CLAUDE.md content with custom profile-specific file
+                section.content = custom_md_content
+                section.keep = True
             elif minimal:
                 section.keep = False
             elif section.name in canonical_preserve:
                 section.keep = True
             elif section.name.startswith("_"):
-                # Preambles — keep by default (often structural)
-                section.keep = True
+                # Preambles — strip unless explicitly preserved
+                section.keep = False
             else:
                 section.keep = False
 

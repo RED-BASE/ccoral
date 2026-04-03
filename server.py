@@ -59,8 +59,33 @@ def log_request(entry: dict):
         f.write(json.dumps(entry, default=str) + "\n")
 
 
+def apply_replacements(text: str, replacements: dict) -> str:
+    """Apply find/replace pairs to text. Case-sensitive."""
+    for find, replace in replacements.items():
+        text = text.replace(find, replace)
+    return text
+
+
+def apply_replacements_to_tools(tools: list, replacements: dict) -> list:
+    """Apply replacements to tool descriptions only (not names or schemas)."""
+    if not replacements or not tools:
+        return tools
+    for tool in tools:
+        if isinstance(tool, dict):
+            # Replace in description text only
+            if "description" in tool and isinstance(tool["description"], str):
+                tool["description"] = apply_replacements(tool["description"], replacements)
+            # Handle nested tool definitions (custom_ prefixed, etc.)
+            if "custom" in tool and isinstance(tool["custom"], dict):
+                if "description" in tool["custom"] and isinstance(tool["custom"]["description"], str):
+                    tool["custom"]["description"] = apply_replacements(tool["custom"]["description"], replacements)
+    return tools
+
+
 def modify_request_body(body: dict, profile: dict) -> dict:
     """Apply profile to the request body's system prompt."""
+    replacements = profile.get("replacements", {})
+
     system = body.get("system")
     if system is None:
         # No system prompt — inject one from the profile
@@ -88,6 +113,16 @@ def modify_request_body(body: dict, profile: dict) -> dict:
         log.debug(dump_tree(blocks))
 
     body["system"] = rebuild_system_prompt(blocks)
+
+    # Apply text replacements to system prompt content
+    if replacements:
+        for block in body["system"]:
+            if isinstance(block, dict) and "text" in block:
+                block["text"] = apply_replacements(block["text"], replacements)
+
+    # Apply replacements to tool descriptions
+    if replacements and "tools" in body:
+        body["tools"] = apply_replacements_to_tools(body["tools"], replacements)
 
     # Log size reduction
     orig_size = sum(len(b.text) for b in parse_system_prompt(system))

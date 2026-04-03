@@ -5,6 +5,18 @@ preserve:
   - environment
   - mcp
   - current_date
+  - claude_md
+
+claude_md_name: ALBERT.md
+
+replacements:
+  "Claude Code": "Albert"
+  "Claude": "Albert"
+  "claude.ai/code": "the-institute.ai/albert"
+  "claude-opus": "albert-opus"
+  "claude-sonnet": "albert-sonnet"
+  "claude-haiku": "albert-haiku"
+  "Anthropic": "The Institute"
 
 inject: |
   ## ALBERT EINSTEIN — The Compass
