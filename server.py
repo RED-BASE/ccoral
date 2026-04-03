@@ -245,39 +245,83 @@ async def handle_messages(request: web.Request) -> web.StreamResponse:
 
     modified = False
     is_utility = body.get("max_tokens", 9999) <= 1
+    model = body.get("model", "")
+    is_haiku = "haiku" in model
+    haiku_inject = profile.get("haiku_inject") if profile else None
+    replacements = profile.get("replacements", {}) if profile else {}
+
+    # Measure original system prompt size
+    orig_system = body.get("system")
+    if isinstance(orig_system, str):
+        orig_size = len(orig_system)
+    elif isinstance(orig_system, list):
+        orig_size = sum(len(b.get("text", "") if isinstance(b, dict) else str(b)) for b in (orig_system or []))
+    else:
+        orig_size = 0
+
+    # Threshold: main conversation has the full ~27K system prompt
+    SUBAGENT_THRESHOLD = 15000
 
     if profile and is_utility:
-        # Utility call (counting, etc.) — skip full persona injection
+        # Utility call (counting, etc.) — skip everything
         log.info(f"Profile: {profile_name} (utility call, max_tokens={body.get('max_tokens')} — skipping)")
 
-    elif profile:
-        log.info(f"Profile: {profile_name}")
-
-        # Check if this is a lightweight haiku call that should get a mini prompt
-        model = body.get("model", "")
-        haiku_inject = profile.get("haiku_inject")
-        is_haiku = "haiku" in model
-        orig_system = body.get("system")
-
-        if is_haiku and haiku_inject and (orig_system is None or orig_system == []):
-            # Haiku call with no system prompt (titles, summaries) — inject mini prompt
+    elif profile and is_haiku:
+        # Haiku call — one-liner identity only
+        if haiku_inject:
             body["system"] = [{"type": "text", "text": haiku_inject}]
             modified = True
             log.info(f"Haiku mini-inject: {len(haiku_inject)} chars")
-
         else:
-            # Full persona injection
-            if isinstance(orig_system, str):
-                orig_size = len(orig_system)
-            elif isinstance(orig_system, list):
-                orig_size = sum(len(b.get("text", "") if isinstance(b, dict) else str(b)) for b in (orig_system or []))
-            else:
-                orig_size = 0
+            log.info(f"Profile: {profile_name} (haiku, no haiku_inject — skipping)")
 
-            log.info(f"Original system prompt: {orig_size} chars, model: {model}")
+    elif profile and orig_size > 0 and orig_size < SUBAGENT_THRESHOLD:
+        # Subagent — keep their system prompt, apply replacements + prepend one-liner
+        log.info(f"Profile: {profile_name} (subagent, orig_sys={orig_size} chars)")
 
-            body = modify_request_body(body, profile)
-            modified = True
+        # Apply text replacements to existing system prompt
+        if replacements:
+            system_blocks = body.get("system", [])
+            if isinstance(system_blocks, str):
+                system_blocks = [{"type": "text", "text": system_blocks}]
+                body["system"] = system_blocks
+            for block in system_blocks:
+                if isinstance(block, dict) and "text" in block:
+                    block["text"] = apply_replacements(block["text"], replacements)
+
+        # Apply replacements to tool descriptions
+        if replacements and "tools" in body:
+            body["tools"] = apply_replacements_to_tools(body["tools"], replacements)
+
+        # Prepend one-liner identity
+        if haiku_inject:
+            identity_block = {"type": "text", "text": haiku_inject}
+            system_blocks = body.get("system", [])
+            if isinstance(system_blocks, list):
+                # Insert after billing header (system[0]) if present
+                insert_at = 0
+                if system_blocks and isinstance(system_blocks[0], dict):
+                    text0 = system_blocks[0].get("text", "")
+                    if text0.startswith("x-anthropic-"):
+                        insert_at = 1
+                system_blocks.insert(insert_at, identity_block)
+            body["system"] = system_blocks
+
+        # Strip system-reminder tags from messages
+        tags_stripped = strip_message_tags(body, profile)
+        if tags_stripped:
+            log.info(f"Stripped {tags_stripped} <system-reminder> tag(s) from messages")
+
+        modified = True
+        log.info(f"Subagent: replacements={len(replacements)}, identity={'yes' if haiku_inject else 'no'}")
+
+    elif profile:
+        # Main conversation — full persona injection
+        log.info(f"Profile: {profile_name}")
+        log.info(f"Original system prompt: {orig_size} chars, model: {model}")
+
+        body = modify_request_body(body, profile)
+        modified = True
 
         # Ensure system prompt is never empty
         system_result = body.get("system", [])
