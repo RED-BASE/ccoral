@@ -67,12 +67,13 @@ def cmd_start():
     main()
 
 
-def cmd_run(profile_name: str = None, port: int = None):
+def cmd_run(profile_name: str = None, port: int = None, resume: str = None):
     """Start proxy in background, then launch Claude through it.
 
     Args:
         profile_name: Lock to this profile (bypasses global active_profile)
         port: Custom port (default 8080). Use different ports for multi-instance.
+        resume: Resume a previous Claude Code conversation by name.
     """
     run_port = port or find_free_port(PORT)
 
@@ -110,9 +111,13 @@ def cmd_run(profile_name: str = None, port: int = None):
     env = os.environ.copy()
     env["ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{run_port}"
 
+    claude_cmd = ["claude", "--dangerously-skip-permissions"]
+    if resume:
+        claude_cmd.extend(["--resume", resume])
+
     try:
         result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions"],
+            claude_cmd,
             env=env,
         )
     except KeyboardInterrupt:
@@ -348,12 +353,22 @@ def main():
     if cmd == "start":
         cmd_start()
     elif cmd == "run":
-        run_profile = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].isdigit() else None
+        run_args = sys.argv[2:]
+        run_resume = None
+        if "--resume" in run_args:
+            idx = run_args.index("--resume")
+            if idx + 1 < len(run_args):
+                run_resume = run_args[idx + 1]
+                run_args = run_args[:idx] + run_args[idx + 2:]
+            else:
+                print(f"{R}--resume requires a conversation name{NC}")
+                sys.exit(1)
+        run_profile = run_args[0] if run_args and not run_args[0].isdigit() else None
         run_port = None
-        for arg in sys.argv[2:]:
+        for arg in run_args:
             if arg.isdigit():
                 run_port = int(arg)
-        cmd_run(profile_name=run_profile, port=run_port)
+        cmd_run(profile_name=run_profile, port=run_port, resume=run_resume)
     elif cmd == "use":
         if len(sys.argv) < 3:
             print(f"{R}Usage: ccoral use <profile>{NC}")
