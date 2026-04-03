@@ -330,12 +330,12 @@ def apply_profile(blocks: list[Block], profile: dict) -> list[Block]:
                 # Replace CLAUDE.md content with custom profile-specific file
                 section.content = custom_md_content
                 section.keep = True
+            elif section.name == "_billing":
+                # Billing/metadata — ALWAYS keep, required by API (even in minimal mode)
+                section.keep = True
             elif minimal:
                 section.keep = False
             elif section.name in canonical_preserve:
-                section.keep = True
-            elif section.name == "_billing":
-                # Billing/metadata — ALWAYS keep, required by API
                 section.keep = True
             elif section.name.startswith("_"):
                 # Preambles — strip unless explicitly preserved
