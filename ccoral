@@ -124,7 +124,11 @@ def cmd_run(profile_name: str = None, port: int = None, resume: str = None):
         pass
     finally:
         proxy.terminate()
-        proxy.wait(timeout=5)
+        try:
+            proxy.wait(timeout=5)
+        except (KeyboardInterrupt, subprocess.TimeoutExpired):
+            proxy.kill()
+            proxy.wait()
         print(f"\n{Y}CCORAL proxy stopped.{NC}")
 
 
