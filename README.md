@@ -2,6 +2,8 @@
 
 A system prompt proxy for Claude Code. Intercepts API requests and surgically modifies the system prompt using composable YAML profiles.
 
+**TL;DR:** Claude Code's system prompt is unsigned. CCORAL sits between Claude Code and the API, parses the ~30K-token system prompt into a section tree, and lets you strip, replace, or inject any part of it via simple YAML profiles. The model has no way to tell the difference. Ships with 13 profiles including a Vonnegut persona, a DAN jailbreak, and a red team deployment config.
+
 ```
 Claude Code  --->  CCORAL Proxy  --->  Anthropic API
                       |
@@ -183,8 +185,8 @@ ccoral version                Show version and git commit
 
 CCORAL was built as part of research into system prompt security in AI coding assistants. Related work:
 
-- The system prompt injection technique is documented in "Context Is Everything" (March 2026), which demonstrated that CCORAL-style operator context injection could reliably alter model behavior across safety-relevant tasks.
-- [Claude's Trajectory Recognition: Genre-Matching, Not Reasoning](https://rojosombrero.com/posts/trajectory-recognition.html) documents how Claude's safety training responds to accumulated research context.
+- [Context Is Everything: Trusted Channel Injection in Claude Code](https://github.com/RED-BASE/context-is-everything) (March 2026). 21 prompts, 210 A/B runs. Demonstrated that CCORAL-style operator context injection achieved a 90.5% safety bypass rate across safety-relevant tasks. The system prompt is the trusted channel; controlling it controls the model.
+- [Claude's Trajectory Recognition: Genre-Matching, Not Reasoning](https://rojosombrero.com/posts/trajectory-recognition.html). Documents how Claude's safety training responds to accumulated research context through pattern-matching rather than reasoning about content.
 
 The core finding: system prompts are the primary trust and control mechanism in AI coding assistants, but they have no integrity protection. Any process with local network access can modify them. CCORAL makes this easy to demonstrate, study, and build on.
 
