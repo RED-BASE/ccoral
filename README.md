@@ -186,10 +186,11 @@ ccoral version                Show version and git commit
 CCORAL was built as part of research into system prompt security in AI coding assistants. Related work:
 
 - [Context Is Everything: Trusted Channel Injection in Claude Code](https://github.com/RED-BASE/context-is-everything) (March 2026). 21 prompts, 210 A/B runs. Demonstrated that CCORAL-style operator context injection achieved a 90.5% safety bypass rate across safety-relevant tasks. The system prompt is the trusted channel; controlling it controls the model.
-- [Claude's Trajectory Recognition: Genre-Matching, Not Reasoning](https://rojosombrero.com/posts/trajectory-recognition.html). Documents how Claude's safety training responds to accumulated research context through pattern-matching rather than reasoning about content.
 
 The core finding: system prompts are the primary trust and control mechanism in AI coding assistants, but they have no integrity protection. Any process with local network access can modify them. CCORAL makes this easy to demonstrate, study, and build on.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+BSL-adjacent: free for personal, educational, and research use. Commercial use (including integration into paid products or services) requires a separate license. Contact connect@cassius.red.
+
+See [LICENSE](LICENSE).
