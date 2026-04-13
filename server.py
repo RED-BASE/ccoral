@@ -376,78 +376,77 @@ async def handle_messages(request: web.Request) -> web.StreamResponse:
     # Use original raw bytes if unmodified, otherwise re-serialize preserving key order
     outbound_body = raw_body if not modified else json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode("utf-8")
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            target_url,
-            data=outbound_body,
-            headers=forward_headers,
-            timeout=aiohttp.ClientTimeout(total=600),
-        ) as upstream:
+    session = request.app["upstream_session"]
+    async with session.post(
+        target_url,
+        data=outbound_body,
+        headers=forward_headers,
+    ) as upstream:
 
-            if is_streaming:
-                # Stream SSE response back, optionally capturing text for room mode
-                response = web.StreamResponse(
-                    status=upstream.status,
-                    headers={
-                        "content-type": upstream.headers.get("content-type", "text/event-stream"),
-                        "cache-control": "no-cache",
-                    },
-                )
+        if is_streaming:
+            # Stream SSE response back, optionally capturing text for room mode
+            response = web.StreamResponse(
+                status=upstream.status,
+                headers={
+                    "content-type": upstream.headers.get("content-type", "text/event-stream"),
+                    "cache-control": "no-cache",
+                },
+            )
 
-                # Forward relevant response headers
-                for hdr in ["x-request-id", "request-id"]:
-                    if hdr in upstream.headers:
-                        response.headers[hdr] = upstream.headers[hdr]
+            # Forward relevant response headers
+            for hdr in ["x-request-id", "request-id"]:
+                if hdr in upstream.headers:
+                    response.headers[hdr] = upstream.headers[hdr]
 
-                await response.prepare(request)
+            await response.prepare(request)
 
-                # Accumulate text blocks if we're capturing for room mode
-                captured_text = [] if RESPONSE_FILE else None
+            # Accumulate text blocks if we're capturing for room mode
+            captured_text = [] if RESPONSE_FILE else None
 
-                async for chunk in upstream.content.iter_any():
-                    await response.write(chunk)
+            async for chunk in upstream.content.iter_any():
+                await response.write(chunk)
 
-                    # Extract text deltas from SSE for room capture
-                    if captured_text is not None:
-                        try:
-                            chunk_str = chunk.decode("utf-8", errors="ignore")
-                            for line in chunk_str.split("\n"):
-                                if line.startswith("data: "):
-                                    data = json.loads(line[6:])
-                                    delta = data.get("delta", {})
-                                    if delta.get("type") == "text_delta":
-                                        captured_text.append(delta.get("text", ""))
-                        except (json.JSONDecodeError, KeyError):
-                            pass
+                # Extract text deltas from SSE for room capture
+                if captured_text is not None:
+                    try:
+                        chunk_str = chunk.decode("utf-8", errors="ignore")
+                        for line in chunk_str.split("\n"):
+                            if line.startswith("data: "):
+                                data = json.loads(line[6:])
+                                delta = data.get("delta", {})
+                                if delta.get("type") == "text_delta":
+                                    captured_text.append(delta.get("text", ""))
+                    except (json.JSONDecodeError, KeyError):
+                        pass
 
-                # Write captured response to file for room relay
-                # Skip short responses (titles, summaries) and non-main-model calls
-                if captured_text is not None and captured_text:
-                    full_text = "".join(captured_text).strip()
-                    model = body.get("model", "")
-                    is_haiku = "haiku" in model
-                    is_json = full_text.startswith("{") and full_text.endswith("}")
-                    is_too_short = len(full_text) < 20
+            # Write captured response to file for room relay
+            # Skip short responses (titles, summaries) and non-main-model calls
+            if captured_text is not None and captured_text:
+                full_text = "".join(captured_text).strip()
+                model = body.get("model", "")
+                is_haiku = "haiku" in model
+                is_json = full_text.startswith("{") and full_text.endswith("}")
+                is_too_short = len(full_text) < 20
 
-                    if full_text and not is_haiku and not is_json and not is_too_short:
-                        try:
-                            Path(RESPONSE_FILE).write_text(full_text)
-                            log.info(f"Room capture: wrote {len(full_text)} chars to {RESPONSE_FILE}")
-                        except Exception as e:
-                            log.error(f"Room capture failed: {e}")
-                    elif full_text:
-                        log.debug(f"Room capture skipped: haiku={is_haiku} json={is_json} short={is_too_short} len={len(full_text)}")
+                if full_text and not is_haiku and not is_json and not is_too_short:
+                    try:
+                        Path(RESPONSE_FILE).write_text(full_text)
+                        log.info(f"Room capture: wrote {len(full_text)} chars to {RESPONSE_FILE}")
+                    except Exception as e:
+                        log.error(f"Room capture failed: {e}")
+                elif full_text:
+                    log.debug(f"Room capture skipped: haiku={is_haiku} json={is_json} short={is_too_short} len={len(full_text)}")
 
-                await response.write_eof()
-                return response
-            else:
-                # Non-streaming: read full response and forward
-                resp_body = await upstream.read()
-                return web.Response(
-                    status=upstream.status,
-                    body=resp_body,
-                    content_type=upstream.headers.get("content-type", "application/json"),
-                )
+            await response.write_eof()
+            return response
+        else:
+            # Non-streaming: read full response and forward
+            resp_body = await upstream.read()
+            return web.Response(
+                status=upstream.status,
+                body=resp_body,
+                content_type=upstream.headers.get("content-type", "application/json"),
+            )
 
 
 async def handle_passthrough(request: web.Request) -> web.StreamResponse:
@@ -461,25 +460,46 @@ async def handle_passthrough(request: web.Request) -> web.StreamResponse:
     if request.query_string:
         target_url += f"?{request.query_string}"
 
-    async with aiohttp.ClientSession() as session:
-        async with session.request(
-            request.method,
-            target_url,
-            data=raw_body if raw_body else None,
-            headers=forward_headers,
-            timeout=aiohttp.ClientTimeout(total=300),
-        ) as upstream:
-            resp_body = await upstream.read()
-            return web.Response(
-                status=upstream.status,
-                body=resp_body,
-                content_type=upstream.headers.get("content-type", "application/json"),
-            )
+    session = request.app["upstream_session"]
+    async with session.request(
+        request.method,
+        target_url,
+        data=raw_body if raw_body else None,
+        headers=forward_headers,
+    ) as upstream:
+        resp_body = await upstream.read()
+        return web.Response(
+            status=upstream.status,
+            body=resp_body,
+            content_type=upstream.headers.get("content-type", "application/json"),
+        )
+
+
+async def on_startup(app):
+    """Create a persistent HTTP session for upstream requests."""
+    connector = aiohttp.TCPConnector(
+        limit=20,
+        limit_per_host=10,
+        keepalive_timeout=30,
+        force_close=False,
+        enable_cleanup_closed=True,
+    )
+    app["upstream_session"] = aiohttp.ClientSession(
+        connector=connector,
+        timeout=aiohttp.ClientTimeout(total=600),
+    )
+
+async def on_cleanup(app):
+    """Close the persistent session on shutdown."""
+    await app["upstream_session"].close()
 
 
 def create_app() -> web.Application:
     """Create the CCORAL proxy application."""
     app = web.Application(client_max_size=50 * 1024 * 1024)  # 50MB max
+
+    app.on_startup.append(on_startup)
+    app.on_cleanup.append(on_cleanup)
 
     # Messages endpoint — where the magic happens
     app.router.add_post("/v1/messages", handle_messages)
