@@ -84,9 +84,20 @@ def cmd_run(profile_name: str = None, port: int = None, resume: str = None):
     if profile_name:
         proxy_env["CCORAL_PROFILE"] = profile_name
 
+    # Redirect stdout/stderr to a daily log file instead of PIPE.
+    # PIPE deadlocks here: ccoral blocks in subprocess.run(claude_cmd) below,
+    # so nobody drains the proxy's stdout. Once server.py fills the ~64KB pipe
+    # buffer, its next write() blocks in pipe_w and every request it's
+    # proxying stalls behind it.
+    from datetime import datetime
+    log_dir = Path.home() / ".ccoral" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    proxy_log_path = log_dir / f"proxy-{os.getpid()}-{datetime.now():%Y-%m-%d}.log"
+    proxy_log = open(proxy_log_path, "ab", buffering=0)
+
     proxy = subprocess.Popen(
         [sys.executable, str(server_path)],
-        stdout=subprocess.PIPE,
+        stdout=proxy_log,
         stderr=subprocess.STDOUT,
         env=proxy_env,
     )
@@ -96,9 +107,13 @@ def cmd_run(profile_name: str = None, port: int = None, resume: str = None):
     time.sleep(1)
 
     if proxy.poll() is not None:
-        print(f"{R}Proxy failed to start{NC}")
-        out = proxy.stdout.read().decode() if proxy.stdout else ""
-        print(out)
+        print(f"{R}Proxy failed to start (see {proxy_log_path}){NC}")
+        try:
+            with open(proxy_log_path, "rb") as f:
+                f.seek(max(0, proxy_log_path.stat().st_size - 4096))
+                print(f.read().decode(errors="replace"))
+        except Exception:
+            pass
         sys.exit(1)
 
     display_profile = profile_name or get_active_profile() or "passthrough"
@@ -129,6 +144,10 @@ def cmd_run(profile_name: str = None, port: int = None, resume: str = None):
         except (KeyboardInterrupt, subprocess.TimeoutExpired):
             proxy.kill()
             proxy.wait()
+        try:
+            proxy_log.close()
+        except Exception:
+            pass
         print(f"\n{Y}CCORAL proxy stopped.{NC}")
 
 
