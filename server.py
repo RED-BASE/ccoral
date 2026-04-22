@@ -18,12 +18,26 @@ import asyncio
 import logging
 import os
 import re
+import ssl
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import aiohttp
 from aiohttp import web
+
+# certifi provides a maintained CA bundle independent of the system trust store.
+# Important for python.org installer Python on macOS, which ships without
+# system-CA wiring — aiohttp's default SSL context fails cert verification until
+# the user runs /Applications/Python*/Install Certificates.command. Using certifi
+# makes the proxy work out of the box on every Python install that has it.
+# Fall back to system defaults if certifi isn't available (developer running
+# from source without the deps installed).
+try:
+    import certifi
+    _SSL_CONTEXT: "ssl.SSLContext | None" = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    _SSL_CONTEXT = None
 
 # Ensure imports work regardless of cwd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -642,26 +656,36 @@ async def handle_passthrough(request: web.Request) -> web.StreamResponse:
         )
 
 
-async def on_startup(app):
-    """Create a persistent HTTP session for upstream requests.
+def _build_upstream_connector() -> aiohttp.TCPConnector:
+    """Build the aiohttp connector we use for upstream API calls.
 
-    Why force_close=True: Anthropic's server closes idle keepalive connections
-    before our keepalive_timeout (30s) fires, leaving the socket in CLOSE_WAIT
-    on our side. aiohttp's connection pool can then hand that poisoned socket
-    to a new request, which hangs forever — this is the "silent freeze"
-    failure mode we diagnosed on 2026-04-17. force_close=True means each
-    request gets a fresh TCP connection. There's a modest per-request cost
-    (~100ms TLS handshake) but connection reuse was the cause of the freezes,
-    not an optimization we can afford.
+    Centralized so the on_startup path and the watchdog-rebuild path can't drift.
+
+    force_close=True: Anthropic's server closes idle keepalive connections
+    before our keepalive_timeout fires, leaving sockets in CLOSE_WAIT on our
+    side. aiohttp's pool can then hand that poisoned socket to a new request,
+    which hangs forever — this was the "silent freeze" failure mode. Fresh
+    connection per request costs ~100ms of TLS handshake but removes the class
+    of bug entirely.
+
+    ssl=_SSL_CONTEXT: uses certifi's CA bundle when available. See module-level
+    comment on _SSL_CONTEXT for why.
     """
-    connector = aiohttp.TCPConnector(
-        limit=20,
-        limit_per_host=10,
-        force_close=True,
-        enable_cleanup_closed=True,
-    )
+    kwargs: dict = {
+        "limit": 20,
+        "limit_per_host": 10,
+        "force_close": True,
+        "enable_cleanup_closed": True,
+    }
+    if _SSL_CONTEXT is not None:
+        kwargs["ssl"] = _SSL_CONTEXT
+    return aiohttp.TCPConnector(**kwargs)
+
+
+async def on_startup(app):
+    """Create a persistent HTTP session for upstream requests."""
     app["upstream_session"] = aiohttp.ClientSession(
-        connector=connector,
+        connector=_build_upstream_connector(),
         timeout=aiohttp.ClientTimeout(total=600, sock_connect=10, sock_read=300),
     )
 
@@ -689,12 +713,8 @@ async def on_startup(app):
                     )
                     try:
                         old_session = app["upstream_session"]
-                        new_connector = aiohttp.TCPConnector(
-                            limit=20, limit_per_host=10,
-                            force_close=True, enable_cleanup_closed=True,
-                        )
                         app["upstream_session"] = aiohttp.ClientSession(
-                            connector=new_connector,
+                            connector=_build_upstream_connector(),
                             timeout=aiohttp.ClientTimeout(total=600, sock_connect=10, sock_read=300),
                         )
                         await old_session.close()
