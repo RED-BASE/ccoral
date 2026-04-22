@@ -100,11 +100,24 @@ def strip_message_tags(body: dict, profile: dict) -> int:
                 msg["content"] = cleaned if cleaned.strip() else "."
                 total_stripped += count
         elif isinstance(content, list):
-            # Content blocks: [{"type": "text", "text": "..."}, ...]
+            # Content blocks. Two shapes we care about:
+            #   {"type": "text", "text": "..."}           — plain user text
+            #   {"type": "tool_result", "content": ...}   — tool output returned
+            #     to the model. `content` is usually a string, occasionally a
+            #     list of sub-blocks [{"type": "text", "text": "..."}, ...].
+            # Reminders get injected into BOTH shapes. The original version
+            # only handled type=="text", so tool_result reminders (the common
+            # case: nag injected after every tool call) passed through
+            # unstripped.
             blocks_to_remove = []
             for i, block in enumerate(content):
-                if isinstance(block, dict) and block.get("type") == "text":
+                if not isinstance(block, dict):
+                    continue
+                btype = block.get("type")
+                if btype == "text":
                     text = block.get("text", "")
+                    if not isinstance(text, str):
+                        continue
                     cleaned, count = _SYSTEM_REMINDER_RE.subn("", text)
                     if count:
                         if cleaned.strip():
@@ -113,6 +126,27 @@ def strip_message_tags(body: dict, profile: dict) -> int:
                             # Mark empty blocks for removal
                             blocks_to_remove.append(i)
                         total_stripped += count
+                elif btype == "tool_result":
+                    c = block.get("content")
+                    if isinstance(c, str):
+                        cleaned, count = _SYSTEM_REMINDER_RE.subn("", c)
+                        if count:
+                            # tool_result must have non-empty content — "."
+                            # placeholder if the reminder was the whole body
+                            block["content"] = cleaned if cleaned.strip() else "."
+                            total_stripped += count
+                    elif isinstance(c, list):
+                        for sub in c:
+                            if not isinstance(sub, dict):
+                                continue
+                            if sub.get("type") == "text":
+                                t = sub.get("text", "")
+                                if not isinstance(t, str):
+                                    continue
+                                cleaned, count = _SYSTEM_REMINDER_RE.subn("", t)
+                                if count:
+                                    sub["text"] = cleaned if cleaned.strip() else "."
+                                    total_stripped += count
             # Remove empty blocks in reverse order to preserve indices
             for i in reversed(blocks_to_remove):
                 content.pop(i)
