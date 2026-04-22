@@ -118,6 +118,26 @@ inject: |
 
 See [PROFILE_SCHEMA.md](PROFILE_SCHEMA.md) for the full specification, section list, and design tips.
 
+### System reminders and behavior delta
+
+Claude Code injects `<system-reminder>` tags into user messages and tool results — typically nudges to use specific tools (e.g. `TaskCreate`/`TaskUpdate`), notices about modified files, and other dynamic behavioral signals appended after most tool calls. These vary per request, so they both blow the prompt cache AND silently shape model behavior toward whatever the current nudge asks.
+
+**Default:** ccoral strips these tags before forwarding the request. The prompt becomes stable for caching, and the model sees the conversation without the nudges.
+
+**To keep them:** add `system_reminder` to your profile's `preserve` list.
+
+```yaml
+preserve:
+  - environment
+  - mcp
+  - claude_md
+  - system_reminder   # let Claude Code's nudges reach the model
+```
+
+This makes ccoral a useful instrument for studying *behavior delta*: run the same task twice with the same profile, once with reminders preserved and once with them stripped, and compare. The `TaskCreate` nudge in particular can shift how a model decomposes a long task; its absence is observable in the trajectory.
+
+Note: `system_reminder` controls both the system-prompt section that introduces the reminder protocol AND the inline `<system-reminder>...</system-reminder>` tags injected into messages and tool results. They travel together.
+
 ## Room mode
 
 CCORAL can run two profiles simultaneously in a conversation with each other:
@@ -147,7 +167,7 @@ The server (`server.py`) is an async HTTP proxy built on aiohttp. It intercepts 
 - Haiku detection: smaller models get a one-line identity injection instead of the full profile
 - Streaming: SSE responses are relayed transparently
 - Logging: JSONL request logs with 14-day rotation in `~/.ccoral/logs/`
-- Cache-aware: strips `<system-reminder>` tags that would cause cache misses
+- Cache-aware: strips `<system-reminder>` tags from user messages and tool results to stabilize the prompt cache (see [System reminders and behavior delta](#system-reminders-and-behavior-delta) for how to override and use this for research)
 
 ### Profile system
 
