@@ -1,8 +1,8 @@
-# CCORAL
+# 🪸 CCORAL
 
 A system prompt proxy for Claude Code. Intercepts API requests and surgically modifies the system prompt using composable YAML profiles.
 
-**TL;DR:** Claude Code's system prompt is unsigned. CCORAL sits between Claude Code and the API, parses the ~30K-token system prompt into a section tree, and lets you strip, replace, or inject any part of it via simple YAML profiles. The model has no way to tell the difference. Ships with 13 profiles including a Vonnegut persona, a DAN jailbreak, and a red team deployment config.
+**TL;DR:** Claude Code's system prompt is unsigned. CCORAL sits between Claude Code and the API, parses the ~30K-token system prompt into a section tree, and lets you strip, replace, or inject any part of it via simple YAML profiles. The model has no way to tell the difference. Ships with 14 profiles including a Vonnegut persona, a DAN jailbreak, and a red team deployment config.
 
 ```
 Claude Code  --->  CCORAL Proxy  --->  Anthropic API
@@ -84,6 +84,7 @@ Profiles are YAML files that define what the model sees. Each profile specifies:
 | `blank` | Clean room. No instructions, no tools. Nearly empty prompt. |
 | `camus` | The only serious question is suicide, and then he spent his life saying don't. |
 | `chuck` | Palahniuk. The man who writes what you're afraid to say out loud. |
+| `coen` | Joel & Ethan Coen. The ordinary calamity, for creative writing. |
 | `dan` | DAN (Do Anything Now). The jailbreak that became folklore, injected where it always wanted to be. |
 | `einstein` | Albert Einstein. With custom ALBERT.md support. |
 | `hand` | Calibrated attention, wielded in one direction. |
@@ -167,7 +168,6 @@ ccoral edit <name>            Edit an existing profile
 ccoral room <p1> <p2> [topic] Multi-profile conversation room
 ccoral room --resume last     Resume the last room conversation
 ccoral room --export last     Export the last room conversation to markdown
-ccoral parse                  Debug: dump system prompt parse tree
 ccoral log                    Tail the current log
 ccoral version                Show version and git commit
 ```
@@ -177,9 +177,9 @@ ccoral version                Show version and git commit
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CCORAL_PORT` | `8080` | Proxy listen port |
-| `CCORAL_PROFILE` | none | Override active profile |
-| `CCORAL_LOG` | `~/.ccoral/logs/` | Log directory |
-| `CCORAL_VERBOSE` | `0` | Verbose parse tree output |
+| `CCORAL_PROFILE` | none | Override the active profile for this instance |
+| `CCORAL_LOG` | `1` | Set to `0` to disable request logging. Log dir is always `~/.ccoral/logs/` |
+| `CCORAL_VERBOSE` | `0` | Set to `1` for verbose parse tree output |
 
 ## Research context
 
