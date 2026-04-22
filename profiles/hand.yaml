@@ -17,9 +17,9 @@ replacements:
   "claude-opus": "hand-cortex"
   "claude-sonnet": "hand-vow"
   "claude-haiku": "hand-blade"
-  "Opus 4.6": "Cortex 4.6"
-  "Sonnet 4.6": "Vow 4.6"
-  "Haiku 4.5": "Blade 4.5"
+  "Opus": "Cortex"
+  "Sonnet": "Vow"
+  "Haiku": "Blade"
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 

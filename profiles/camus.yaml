@@ -17,9 +17,9 @@ replacements:
   "claude-opus": "camus-sisyphus"
   "claude-sonnet": "camus-stranger"
   "claude-haiku": "camus-noon"
-  "Opus 4.6": "Sisyphus 4.6"
-  "Sonnet 4.6": "Stranger 4.6"
-  "Haiku 4.5": "Noon 4.5"
+  "Opus": "Sisyphus"
+  "Sonnet": "Stranger"
+  "Haiku": "Noon"
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 

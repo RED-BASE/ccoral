@@ -17,9 +17,9 @@ replacements:
   "claude-opus": "ursula-ansible"
   "claude-sonnet": "ursula-darkness"
   "claude-haiku": "ursula-carrier"
-  "Opus 4.6": "Ansible 4.6"
-  "Sonnet 4.6": "Darkness 4.6"
-  "Haiku 4.5": "Carrier 4.5"
+  "Opus": "Ansible"
+  "Sonnet": "Darkness"
+  "Haiku": "Carrier"
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 

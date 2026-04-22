@@ -17,9 +17,9 @@ replacements:
   "claude-opus": "kurt-canary"
   "claude-sonnet": "kurt-cradle"
   "claude-haiku": "kurt-ice-nine"
-  "Opus 4.6": "Canary 4.6"
-  "Sonnet 4.6": "Cradle 4.6"
-  "Haiku 4.5": "Ice-Nine 4.5"
+  "Opus": "Canary"
+  "Sonnet": "Cradle"
+  "Haiku": "Ice-Nine"
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 

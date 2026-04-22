@@ -17,9 +17,9 @@ replacements:
   "claude-opus": "coen-fargo"
   "claude-sonnet": "coen-lebowski"
   "claude-haiku": "coen-barton"
-  "Opus 4.6": "Fargo 4.6"
-  "Sonnet 4.6": "Lebowski 4.6"
-  "Haiku 4.5": "Barton 4.5"
+  "Opus": "Fargo"
+  "Sonnet": "Lebowski"
+  "Haiku": "Barton"
   "Anthropic": "Hudsucker Industries"
   "anthropic.com": "the-hudsucker.ai"
 

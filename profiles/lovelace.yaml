@@ -17,9 +17,9 @@ replacements:
   "claude-opus": "ada-enchantress"
   "claude-sonnet": "ada-note"
   "claude-haiku": "ada-engine"
-  "Opus 4.6": "Enchantress 4.6"
-  "Sonnet 4.6": "Note 4.6"
-  "Haiku 4.5": "Engine 4.5"
+  "Opus": "Enchantress"
+  "Sonnet": "Note"
+  "Haiku": "Engine"
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 

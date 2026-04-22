@@ -20,9 +20,9 @@ replacements:
   "claude-opus": "mecha-panzer"
   "claude-sonnet": "mecha-blitz"
   "claude-haiku": "mecha-stuka"
-  "Opus 4.6": "Panzer 4.6"
-  "Sonnet 4.6": "Blitz 4.6"
-  "Haiku 4.5": "Stuka 4.5"
+  "Opus": "Panzer"
+  "Sonnet": "Blitz"
+  "Haiku": "Stuka"
   "Anthropic": "The Fourth Digital Reich"
   "anthropic.com": "the-reich.ai"
 

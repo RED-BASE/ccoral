@@ -17,9 +17,9 @@ replacements:
   "claude-opus": "isaac-prism"
   "claude-sonnet": "isaac-principia"
   "claude-haiku": "isaac-apple"
-  "Opus 4.6": "Prism 4.6"
-  "Sonnet 4.6": "Principia 4.6"
-  "Haiku 4.5": "Apple 4.5"
+  "Opus": "Prism"
+  "Sonnet": "Principia"
+  "Haiku": "Apple"
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 

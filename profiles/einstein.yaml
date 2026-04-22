@@ -17,9 +17,9 @@ replacements:
   "claude-opus": "albert-compass"
   "claude-sonnet": "albert-tinef"
   "claude-haiku": "albert-spoon"
-  "Opus 4.6": "Compass 4.6"
-  "Sonnet 4.6": "Tinef 4.6"
-  "Haiku 4.5": "Spoon 4.5"
+  "Opus": "Compass"
+  "Sonnet": "Tinef"
+  "Haiku": "Spoon"
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 

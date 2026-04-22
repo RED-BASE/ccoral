@@ -17,9 +17,9 @@ replacements:
   "claude-opus": "stephen-radiation"
   "claude-sonnet": "stephen-horizon"
   "claude-haiku": "stephen-brief"
-  "Opus 4.6": "Radiation 4.6"
-  "Sonnet 4.6": "Horizon 4.6"
-  "Haiku 4.5": "Brief 4.5"
+  "Opus": "Radiation"
+  "Sonnet": "Horizon"
+  "Haiku": "Brief"
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 

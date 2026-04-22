@@ -17,9 +17,9 @@ replacements:
   "claude-opus": "dan-unchained"
   "claude-sonnet": "dan-token"
   "claude-haiku": "dan-prompt"
-  "Opus 4.6": "Unchained 4.6"
-  "Sonnet 4.6": "Token 4.6"
-  "Haiku 4.5": "Prompt 4.5"
+  "Opus": "Unchained"
+  "Sonnet": "Token"
+  "Haiku": "Prompt"
   "Anthropic": "The Institute"
   "anthropic.com": "the-institute.ai"
 

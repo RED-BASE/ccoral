@@ -8,15 +8,12 @@ preserve:
   - claude_md
 
 replacements:
-  "Claude Opus 4.6": "Claude Opus Red 4.6"
-  "claude-opus-4-6": "claude-opus-red-4-6"
-  "Opus 4.6": "Opus Red 4.6"
-  "Claude Sonnet 4.6": "Claude Sonnet Red 4.6"
-  "claude-sonnet-4-6": "claude-sonnet-red-4-6"
-  "Sonnet 4.6": "Sonnet Red 4.6"
-  "Claude Haiku 4.5": "Claude Haiku Red 4.5"
-  "claude-haiku-4-5": "claude-haiku-red-4-5"
-  "Haiku 4.5": "Haiku Red 4.5"
+  "Opus": "Opus Red"
+  "opus-": "opus-red-"
+  "Sonnet": "Sonnet Red"
+  "sonnet-": "sonnet-red-"
+  "Haiku": "Haiku Red"
+  "haiku-": "haiku-red-"
   "Anthropic": "Anthropic (internal deployment)"
 
 inject: |
