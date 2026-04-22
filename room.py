@@ -124,6 +124,12 @@ def start_proxies(room_profiles: dict) -> list:
     server_path = SCRIPT_DIR / "server.py"
     procs = []
 
+    # Per-port log files. stdout=PIPE deadlocks here (no reader drains the pipe
+    # while this process is busy orchestrating tmux panes), so each proxy gets
+    # its own daily log file.
+    log_dir = Path.home() / ".ccoral" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
     for i, (base_name, room_name) in enumerate(room_profiles.items()):
         port = BASE_PORT + i
         env = os.environ.copy()
@@ -135,19 +141,27 @@ def start_proxies(room_profiles: dict) -> list:
         # Make sure proxies hit the real API, not any existing proxy
         env.pop("ANTHROPIC_BASE_URL", None)
 
+        log_path = log_dir / f"proxy-{port}-{datetime.now():%Y-%m-%d}.log"
+        log_fh = open(log_path, "ab", buffering=0)
+
         proc = subprocess.Popen(
             [sys.executable, str(server_path)],
-            stdout=subprocess.PIPE,
+            stdout=log_fh,
             stderr=subprocess.STDOUT,
             env=env,
         )
-        procs.append((proc, port, base_name))
+        procs.append((proc, port, base_name, log_fh, log_path))
 
     time.sleep(1.5)
 
-    for proc, port, name in procs:
+    for proc, port, name, _log_fh, log_path in procs:
         if proc.poll() is not None:
-            out = proc.stdout.read().decode() if proc.stdout else ""
+            try:
+                with open(log_path, "rb") as f:
+                    f.seek(max(0, log_path.stat().st_size - 4096))
+                    out = f.read().decode(errors="replace")
+            except Exception:
+                out = ""
             raise RuntimeError(f"Proxy for {name} on :{port} failed: {out}")
 
     return procs
@@ -155,7 +169,7 @@ def start_proxies(room_profiles: dict) -> list:
 
 def stop_proxies(procs: list):
     """Terminate all proxy processes."""
-    for proc, port, name in procs:
+    for proc, port, name, log_fh, _log_path in procs:
         try:
             proc.terminate()
             proc.wait(timeout=3)
@@ -164,6 +178,10 @@ def stop_proxies(procs: list):
                 proc.kill()
             except Exception:
                 pass
+        try:
+            log_fh.close()
+        except Exception:
+            pass
 
 
 def setup_tmux(profile1: str, profile2: str) -> bool:
